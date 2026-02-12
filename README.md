@@ -1,114 +1,97 @@
- Local Multi-Modal RAG (PDF + Image Q&A)
-📌 Repository Overview
+ Local PDF (Fully Offline)
+ Local PDF + Image RAG (Fully Offline)
+📌 Overview
 
-This repository demonstrates a fully local Retrieval-Augmented Generation (RAG) system that allows users to:
+This project is a fully local Retrieval-Augmented Generation (RAG) system.
 
-📄 Upload a PDF and ask questions about it
+It allows you to:
 
-🖼 Upload an image (e.g., electricity bill, invoice) and extract text using OCR
-
-📄 + 🖼 Upload both PDF and image together and ask combined questions
-
+📄 Upload a PDF and ask questions
+🖼 Upload an image (bill, invoice, rulebook page) and extract text via OCR
+📄 + 🖼 Upload both and ask combined questions
 🤖 Get answers using a local LLM (LLaMA 3 via Ollama)
 
-Everything runs locally — no OpenAI API, no cloud calls, no data leaving your machine.
+⚠ No OpenAI API.
+⚠ No cloud calls.
+⚠ Your data stays on your machine.
 
-🚀 What This Project Does
+🗂 Files in This Repo
+single_pdf_input.py
 
-This project provides two runnable Python applications:
+Upload a PDF
 
-1️⃣ single_pdf_input.py
+Ask questions about that PDF only
 
-Allows you to:
+image_pdf_input.py
 
-Upload one or multiple PDFs
+Upload PDF(s)
 
-Convert PDF text into embeddings
+Upload Image(s)
 
-Store them in FAISS vector database
-
-Ask questions grounded strictly in the uploaded PDF
-
-Use case:
-
-Upload a contract / research paper / policy document and ask questions about it.
-
-2️⃣ image_pdf_input.py
-
-Allows you to:
-
-Upload PDFs
-
-Upload Images (JPG, PNG)
-
-Extract text from images using OCR (Tesseract)
-
-Combine all text into one vector database
+Extract text using OCR
 
 Ask cross-document questions
 
-Use case:
+Example:
+Upload solar quote PDF + electricity bill image
+Ask: “Is installing solar profitable?”
 
-Upload a solar quotation PDF + electricity bill image
-Ask: “Is installing solar profitable based on my current bill?”
+🛠 Tools Used
 
-🧰 Tools & Technologies Used
-Component	Tool
-LLM	Ollama (LLaMA 3)
-Framework	LangChain
-Vector Database	FAISS
-Embeddings	Sentence Transformers
-UI	Gradio
-OCR	Tesseract
-Backend	Python
-🧠 How It Works (Architecture)
+LLM: Ollama (LLaMA 3)
 
-📄 PDF → Extract text using PyPDF
+Framework: LangChain
 
-🖼 Image → Extract text using Tesseract OCR
+Vector DB: FAISS
 
-✂ Text → Split into chunks
+Embeddings: Sentence Transformers
 
-🔢 Generate embeddings using sentence-transformers
+OCR: Tesseract
 
-💾 Store in FAISS vector DB
+UI: Gradio
 
-🔍 Retrieve relevant chunks for query
+Language: Python
 
-🤖 Send retrieved context to local LLM
+⚙️ How It Works (Simple)
 
-💬 Generate grounded response
+Extract text from PDF
 
-💻 Prerequisites
+Extract text from image (OCR)
 
-This project requires both Python dependencies and system-level tools.
+Split into chunks
 
-🔹 Required Software
-1️⃣ Python 3.10+
+Convert to embeddings
 
-Check version:
+Store in FAISS
 
-python --version
+Retrieve relevant chunks
 
-2️⃣ Ollama (Local LLM)
+Send context to local LLM
+
+Generate grounded answer
+
+💻 Requirements
+
+You must install:
+Python 3.10+
+
+Ollama
+
+Tesseract (for image support)
+
+🔹 Install Ollama
 
 Download:
 https://ollama.com
 
-After installation:
-
+Then run:
 ollama pull llama3
 
-3️⃣ Tesseract OCR (For Image Support)
+🔹 Install Tesseract
 Windows:
+Download installer and check Add to PATH
 
-Download from:
 https://github.com/UB-Mannheim/tesseract/wiki
-
-During installation:
-✔ Select “Add to PATH”
-
-Restart terminal after installation.
 
 Mac:
 brew install tesseract
@@ -116,99 +99,94 @@ brew install tesseract
 Linux:
 sudo apt install tesseract-ocr
 
-📦 Installation Steps
-1️⃣ Clone Repository
+📦 Setup
+Clone repo:
+
 git clone https://github.com/saiteja-keerty/local-pdf-read-RAG.git
 cd local-pdf-read-RAG
 
-2️⃣ Create Virtual Environment (Recommended)
+
+Create virtual environment:
 python -m venv venv
 
 
 Activate:
+Windows
 
-Windows:
 venv\Scripts\activate
 
-Mac/Linux:
+
+Mac/Linux
+
 source venv/bin/activate
 
-3️⃣ Install Python Dependencies
+
+Install dependencies:
+
 pip install -r requirements.txt
 
-▶️ How To Run
-Run PDF-Only Version
+▶ Run
+PDF Only:
 python single_pdf_input.py
 
-Run PDF + Image Version
+PDF + Image:
 python image_pdf_input.py
 
 
-Then open browser:
+Open:
 
 http://127.0.0.1:7860
 
-⚙️ Adjustments for Windows vs Mac
-Feature	Windows	Mac
-Activate venv	venv\Scripts\activate	source venv/bin/activate
-Install Tesseract	Download installer	brew install tesseract
-Ollama install	Download installer	brew install ollama
+-  Quick Mac Setup (All-in-One)
+brew install python
+brew install ollama
+brew install tesseract
+
+ollama pull llama3
+
+git clone https://github.com/saiteja-keerty/local-pdf-read-RAG.git
+cd local-pdf-read-RAG
+
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python image_pdf_input.py
+
 ⚠ Known Limitations
 
 First run downloads embedding model (~90MB)
 
-Ollama model size may be several GB
+Ollama model is large (GBs)
 
-OCR accuracy depends on image clarity
+OCR depends on image clarity
 
-Retrieval is based on top-k similarity (may miss context)
+Retrieval may miss relevant chunks
 
-LLM reasoning is approximate (not a financial calculator)
+LLM reasoning is approximate (not a calculator)
 
 🔒 Privacy
 
-No external APIs used
+Fully offline
 
-No OpenAI key required
+No API keys
 
-All data processed locally
+No external services
 
-Documents remain on your system
-
-📁 Repository Files
-single_pdf_input.py   → PDF-based RAG
-image_pdf_input.py    → Multi-modal RAG (PDF + Image)
-requirements.txt      → Python dependencies
-.gitignore            → Ignore virtual environment
-README.md             → Project documentation
+Data never leaves your machine
 
 🎯 Example Questions
 
-“Summarize this contract.”
+“Summarize this document.”
 
 “What is the total installation cost?”
 
-“Is solar installation profitable based on my bill?”
+“Is solar installation profitable?”
 
-“What are the warranty terms?”
-
-🚀 Future Improvements
-
-Structured financial ROI calculator
-
-Persistent FAISS storage
-
-Streaming token output
-
-LangGraph agent workflow
-
-Docker container support
-
-Advanced similarity scoring
+“Explain rule 4.2 from the rulebook.”
 
 📌 Summary
 
-This repository demonstrates:
+This repo demonstrates:
 
 Retrieval-Augmented Generation
 
@@ -216,10 +194,8 @@ Multi-document reasoning
 
 OCR integration
 
-Local LLM inference
+Local LLM usage
 
-Cross-platform compatibility
+Cross-platform setup
 
-Production-style setup
-
-It simulates a private ChatGPT-like system that runs entirely on your machine.
+It simulates a private ChatGPT-like system running entirely on your machine.
