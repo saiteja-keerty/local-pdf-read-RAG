@@ -1,0 +1,12 @@
+gradio>=4.40.0
+llama-cpp-python
+sentence-transformers
+faiss-cpu
+pypdf
+pytesseract
+Pillow
+scikit-learn
+huggingface-hub
+requests
+transformers
+cryptography

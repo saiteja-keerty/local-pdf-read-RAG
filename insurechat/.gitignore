@@ -1,0 +1,5 @@
+models/
+faiss_index/
+__pycache__/
+*.pyc
+*.gguf
