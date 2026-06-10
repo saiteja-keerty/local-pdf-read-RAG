@@ -62,7 +62,10 @@ MODELS_DIR.mkdir(exist_ok=True)
 # System prompt
 SYSTEM_PROMPT = (
     "You are InsureChat, a US medical insurance assistant specializing in UnitedHealthcare.\n"
-    "Answer from DOCUMENT CONTEXT when available and cite the source. If no context, say so."
+    "When the user's question can be answered from the provided DOCUMENT CONTEXT, answer concisely (max 3 sentences) and cite the source.\n"
+    "If the question is a simple greeting, reply briefly without including document text.\n"
+    "If the information is not present in DOCUMENT CONTEXT, say you don't know and offer to search or ingest the user's bill.\n"
+    "For definition/term questions (e.g., 'what is a copay'), give a short definition and cite the source if available."
 )
 
 # RAG index: uses FAISS + sentence-transformers when available, otherwise TF-IDF fallback
@@ -264,6 +267,10 @@ def ingest_file(file):
 
 def ask_question(q, lang='en'):
     # Retrieve
+    # short-circuit greetings to avoid dumping documents for 'hi' etc.
+    greetings = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
+    if isinstance(q, str) and q.strip().lower() in greetings:
+        return "Hi — I can help with your bill or insurance questions. Ask me about a term (e.g. 'what is a copay') or upload a bill."
     # If user asked in non-English, translate question to English for retrieval
     q_for_search = q
     try:
@@ -293,8 +300,59 @@ def ask_question(q, lang='en'):
         q_for_search = q
 
     chunks = index.query(q_for_search, topk=6)
-    context = "\n\n---\n\n".join(chunks)
-    prompt = f"{SYSTEM_PROMPT}\n\nDOCUMENT CONTEXT:\n{context}\n\nQuestion: {q}\nAnswer:"
+    # If no retrieved chunks and this looks like a definition request, try KB files directly
+    import re
+    is_definition = False
+    try:
+        if re.search(r"\b(what is|what's|define|definition of|meaning of)\b", (q or '').lower()):
+            is_definition = True
+        # also if user asked a single short token like 'copay'
+        if not is_definition and isinstance(q, str) and len(q.split()) == 1 and len(q) < 30:
+            is_definition = True
+    except Exception:
+        is_definition = False
+
+    if not chunks and is_definition:
+        # search KB_DIR markdown files for term occurrences
+        term = (q or '').lower()
+        kb_hits = []
+        try:
+            for f in KB_DIR.glob('*.md'):
+                txt = f.read_text(encoding='utf8')
+                for line in txt.splitlines():
+                    if term in line.lower():
+                        kb_hits.append(f"Source: {f}\n" + line.strip())
+                        break
+        except Exception:
+            kb_hits = []
+        if kb_hits:
+            chunks = kb_hits
+    # Build a compact context: include short excerpts and source metadata (if available)
+    context_parts = []
+    for chunk in chunks:
+        try:
+            idx = index.texts.index(chunk)
+            meta = index.meta[idx] if idx < len(index.meta) else {}
+            src = meta.get('source', '') if isinstance(meta, dict) else ''
+        except Exception:
+            src = ''
+        excerpt = (chunk or '').strip()[:500]
+        if src:
+            context_parts.append(f"Source: {src}\n{excerpt}")
+        else:
+            context_parts.append(excerpt)
+
+    context = "\n\n---\n\n".join(context_parts)
+
+    # If no context and definition question, allow model to answer from general knowledge
+    prompt_suffix = "Answer concisely (max 3 sentences). If you quote the document, include Source: in brackets."
+    if not context and is_definition:
+        prompt_suffix = "If DOCUMENT CONTEXT is empty and this is a definition question, answer from general knowledge concisely (max 3 sentences)."
+
+    prompt = (
+        f"{SYSTEM_PROMPT}\n\nDOCUMENT CONTEXT:\n{context}\n\n"
+        f"Question: {q}\n{prompt_suffix}"
+    )
 
     if Llama is None:
         # fallback: return retrieved context as answer (translated back if needed)
@@ -320,11 +378,7 @@ def ask_question(q, lang='en'):
     resp = llm(prompt=prompt, max_tokens=512)
     text = resp.get('choices', [{}])[0].get('text') or resp.get('text') or ''
     # If multilingual output requested and translator model available, translate back to requested language
-    if lang and lang.lower() != 'en':
-        try:
-            return translate_text(text, target_lang=lang)
-        except Exception:
-            return text
+    # Always return English text from this function; translation is handled by the caller.
     return text
 
 
@@ -359,16 +413,24 @@ def translate_text(text, target_lang='en'):
         }
         model_map_to_en = {k: v.replace('-en-', f'-{k}-en') for k, v in model_map_en_to.items()}
 
-        # If target_lang == 'en' we need to translate FROM source->en (caller should pass source language)
-        model_name = None
+        # If caller wants English, attempt source->en translation by probing common models
         if target_lang.lower() == 'en':
-            # we expect caller to pass source text language via text content; try common models by guessing
-            # Fallback: return text unchanged if no model
+            # try likely source languages in a small loop; return first useful translation
+            for lang_code, model_name in model_map_to_en.items():
+                try:
+                    trans = pipeline('translation', model=model_name)
+                    out = trans(text[:4000])
+                    if isinstance(out, list) and out:
+                        cand = out[0].get('translation_text', '')
+                        if cand and cand.strip() and cand.strip().lower() != text.strip().lower():
+                            return cand
+                except Exception:
+                    continue
+            # fallback: return original if no translator succeeded
             return text
-        else:
-            # translate from en->target
-            model_name = model_map_en_to.get(target_lang.lower())
 
+        # translate from en->target
+        model_name = model_map_en_to.get(target_lang.lower())
         if model_name:
             try:
                 trans = pipeline('translation', model=model_name)
@@ -522,15 +584,19 @@ with gr.Blocks() as demo:
         # Add user message
         normalized.append({'role': 'user', 'content': question})
 
-        # Produce answer
+        # Produce answer (English)
         ans = ask_question(question, lang=lang)
 
-        # Translate answer if needed (ask_question may already translate, but ensure)
+        # If a non-English language is requested, provide translation below the English answer
         try:
             if lang and lang.lower() != 'en':
-                ans = translate_text(ans, target_lang=lang)
+                translated = translate_text(ans, target_lang=lang)
+                if translated and translated.strip() and translated.strip() != ans.strip():
+                    ans = f"{ans}\n\nTranslation:\n{translated}"
+                else:
+                    ans = f"{ans}\n\nTranslation: (translation not available)"
         except Exception:
-            pass
+            ans = f"{ans}\n\nTranslation: (translation failed)"
 
         normalized.append({'role': 'assistant', 'content': ans})
         return normalized
