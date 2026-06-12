@@ -13,6 +13,7 @@ import threading
 from pathlib import Path
 import re
 import io
+from difflib import get_close_matches
 
 # LLM + embeddings + vectorstore imports are optional until models are present
 try:
@@ -92,6 +93,20 @@ LANGUAGE_NAMES = {
 }
 
 ONLINE_GLOSSARY_URL = "https://www.healthcare.gov/glossary/"
+
+INSURANCE_TERM_ALIASES = {
+    'copay': ['copay', 'copayment', 'co-pay'],
+    'deductible': ['deductible'],
+    'coinsurance': ['coinsurance', 'co-insurance'],
+    'out-of-pocket maximum': ['out-of-pocket maximum', 'out of pocket maximum', 'oop max'],
+    'allowed amount': ['allowed amount', 'allowable', 'eligible expense', 'negotiated rate'],
+    'eob': ['eob', 'explanation of benefits'],
+    'claim': ['claim'],
+    'premium': ['premium'],
+    'in-network': ['in-network', 'in network'],
+    'out-of-network': ['out-of-network', 'out of network', 'non-participating'],
+    'balance billing': ['balance billing', 'balance bill'],
+}
 
 _LLM_CACHE = {}
 _LLM_CACHE_LOCK = threading.Lock()
@@ -370,22 +385,8 @@ def _search_kb_for_terms(query, limit=4):
         return []
 
     normalized = query.lower()
-    aliases = {
-        'copay': ['copay', 'copayment', 'co-pay'],
-        'deductible': ['deductible'],
-        'coinsurance': ['coinsurance', 'co-insurance'],
-        'out-of-pocket maximum': ['out-of-pocket', 'oop', 'maximum'],
-        'allowed amount': ['allowed amount', 'allowable', 'eligible expense', 'negotiated rate'],
-        'eob': ['eob', 'explanation of benefits'],
-        'claim': ['claim'],
-        'premium': ['premium'],
-        'in-network': ['in-network', 'network'],
-        'out-of-network': ['out-of-network', 'non-participating'],
-        'balance billing': ['balance billing', 'balance bill'],
-    }
-
     wanted = set()
-    for canonical, terms in aliases.items():
+    for canonical, terms in INSURANCE_TERM_ALIASES.items():
         if any(term in normalized for term in terms):
             wanted.add(canonical)
 
@@ -428,6 +429,110 @@ def _search_kb_for_terms(query, limit=4):
                 if len(hits) >= limit:
                     return hits
     return hits
+
+
+def _correct_insurance_terms(query):
+    """Correct close insurance-term misspellings without rewriting normal text."""
+    if not isinstance(query, str):
+        return query, []
+
+    vocabulary = {name for name in INSURANCE_TERM_ALIASES if ' ' not in name and '-' not in name}
+    for aliases in INSURANCE_TERM_ALIASES.values():
+        vocabulary.update(alias for alias in aliases if ' ' not in alias and '-' not in alias)
+    corrections = []
+
+    def replace_token(match):
+        token = match.group(0)
+        lowered = token.lower()
+        if lowered in vocabulary or lowered in {'allowed'} or len(lowered) < 5:
+            return token
+        close = get_close_matches(lowered, vocabulary, n=1, cutoff=0.72)
+        if not close:
+            return token
+        matched = close[0]
+        canonical = next(
+            (name for name, aliases in INSURANCE_TERM_ALIASES.items()
+             if matched == name or matched in aliases),
+            matched,
+        )
+        corrections.append((token, canonical))
+        return canonical
+
+    return re.sub(r"[A-Za-z][A-Za-z-]*", replace_token, query), corrections
+
+
+def _is_definition_question(question):
+    text = (question or '').strip().lower()
+    if re.search(r"\b(what is|what's|define|definition of|meaning of)\b", text):
+        return True
+    return len(text.split()) == 1 and len(text) < 30
+
+
+def _answer_from_active_bill(question, parsed):
+    if not isinstance(parsed, dict) or parsed.get('error'):
+        return None
+
+    q = (question or '').lower()
+
+    def has_any(phrases):
+        return any(re.search(rf"\b{re.escape(phrase)}\b", q) for phrase in phrases)
+
+    bill_field_words = (
+        'bill', 'document', 'upload', 'image', 'owe', 'owed', 'pay', 'balance',
+        'discount', 'adjustment', 'service date', 'date of service', 'allowed amount',
+        'insurance paid', 'plan paid', 'patient responsibility', 'total charge', 'total billed',
+    )
+    if _is_definition_question(question) and not has_any(bill_field_words):
+        return None
+
+    bill_words = (
+        'bill', 'document', 'upload', 'image', 'owe', 'owed', 'pay', 'balance',
+        'charge', 'charged', 'total', 'discount', 'adjustment', 'service date',
+        'date of service', 'analyze', 'analyse', 'summary', 'summarize', 'explain',
+        'warning', 'allowed amount', 'insurance paid', 'plan paid', 'patient responsibility',
+    )
+    if not has_any(bill_words):
+        return None
+
+    owed = parsed.get('patient_owed') or parsed.get('estimated_patient_responsibility')
+    billed = parsed.get('billed_amount')
+    discount = parsed.get('adjustment_or_discount')
+    allowed = parsed.get('allowed_amount')
+    plan_paid = parsed.get('plan_paid')
+    service_date = parsed.get('service_date')
+
+    if has_any(('owe', 'owed', 'pay', 'balance', 'patient responsibility')):
+        if owed:
+            return f"The bill lists your patient responsibility as {_format_money(_money_to_float(owed)) or owed}."
+        return "The uploaded bill does not clearly show a patient-responsibility or balance amount."
+    if has_any(('discount', 'adjustment')):
+        return (f"The bill shows an adjustment or discount of {_format_money(_money_to_float(discount))}."
+                if discount else "No labeled adjustment or discount was found on the uploaded bill.")
+    if has_any(('service date', 'date of service')):
+        return f"The service date shown is {service_date}." if service_date else "No service date was found."
+    if 'allowed amount' in q:
+        return (f"The allowed amount shown is {_format_money(_money_to_float(allowed))}."
+                if allowed else "No allowed amount was found. Compare this provider bill with the insurer EOB.")
+    if has_any(('insurance paid', 'plan paid')):
+        return (f"The plan-paid amount shown is {_format_money(_money_to_float(plan_paid))}."
+                if plan_paid else "No plan-paid amount was found on this provider bill.")
+    if has_any(('charge', 'charged', 'total')) and billed:
+        return f"The total billed amount is {_format_money(_money_to_float(billed))}."
+
+    details = []
+    if billed:
+        details.append(f"Total billed: {_format_money(_money_to_float(billed))}")
+    if discount:
+        details.append(f"Adjustment/discount: {_format_money(_money_to_float(discount))}")
+    if owed:
+        details.append(f"Patient responsibility: {_format_money(_money_to_float(owed)) or owed}")
+    if service_date:
+        details.append(f"Service date: {service_date}")
+    answer = "Uploaded bill summary:\n" + "\n".join(f"- {item}" for item in details)
+    warnings = parsed.get('warnings') or []
+    if warnings:
+        answer += "\n\nImportant:\n" + "\n".join(f"- {warning}" for warning in warnings)
+    return answer
 
 
 def _clean_source_label(source):
@@ -519,36 +624,39 @@ def _simple_context_answer(question, chunks):
     return answer
 
 
-def ask_question(q, lang='en'):
+def ask_question(q, lang='en', active_document=None):
     # Retrieve
     # short-circuit greetings to avoid dumping documents for 'hi' etc.
     greetings = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
     if isinstance(q, str) and q.strip().lower() in greetings:
         return "Hi — I can help with your bill or insurance questions. Ask me about a term (e.g. 'what is a copay') or upload a bill."
+    corrected_q, corrections = _correct_insurance_terms(q)
+
+    def finish(answer):
+        if corrections:
+            original, corrected = corrections[0]
+            return f"I interpreted '{original}' as '{corrected}'.\n\n{answer}"
+        return answer
+
+    bill_answer = _answer_from_active_bill(corrected_q, active_document)
+    if bill_answer:
+        return finish(bill_answer)
+
     # Try the local glossary before translating. This handles an English
     # question with a non-English answer language without an unnecessary model call.
-    preliminary_kb_hits = _search_kb_for_terms(q)
+    preliminary_kb_hits = _search_kb_for_terms(corrected_q)
 
     # Translate the question locally with Aya for English-language retrieval.
-    q_for_search = q
+    q_for_search = corrected_q
     try:
         if lang and lang.lower() != 'en' and not preliminary_kb_hits:
-            q_for_search = translate_text(q, target_lang='en', source_lang=lang)
+            q_for_search = translate_text(corrected_q, target_lang='en', source_lang=lang)
     except Exception:
-        q_for_search = q
+        q_for_search = corrected_q
 
     chunks = index.query(q_for_search, topk=6)
     # If no retrieved chunks and this looks like a definition request, try KB files directly
-    import re
-    is_definition = False
-    try:
-        if re.search(r"\b(what is|what's|define|definition of|meaning of)\b", (q or '').lower()):
-            is_definition = True
-        # also if user asked a single short token like 'copay'
-        if not is_definition and isinstance(q, str) and len(q.split()) == 1 and len(q) < 30:
-            is_definition = True
-    except Exception:
-        is_definition = False
+    is_definition = _is_definition_question(corrected_q)
 
     kb_hits = preliminary_kb_hits or _search_kb_for_terms(q_for_search)
     if kb_hits:
@@ -575,7 +683,7 @@ def ask_question(q, lang='en'):
     context = "\n\n---\n\n".join(context_parts)
 
     if not context and is_definition:
-        return (
+        return finish(
             "I could not find that definition in the local knowledge base. "
             "I have this trusted glossary reference that may contain what you need: "
             f"{ONLINE_GLOSSARY_URL}"
@@ -587,15 +695,15 @@ def ask_question(q, lang='en'):
     )
     prompt = (
         f"{SYSTEM_PROMPT}\n\nDOCUMENT CONTEXT:\n{context}\n\n"
-        f"Question: {q}\n{prompt_suffix}"
+        f"Question: {corrected_q}\n{prompt_suffix}"
     )
 
     if Llama is None:
-        return _simple_context_answer(q, chunks)
+        return finish(_simple_context_answer(corrected_q, chunks))
 
     llm_path = _select_model_for_role("reason")
     if not llm_path:
-        return _simple_context_answer(q, chunks)
+        return finish(_simple_context_answer(corrected_q, chunks))
 
     llm = _get_llm(llm_path)
 
@@ -675,7 +783,7 @@ def translate_text(text, target_lang='en', source_lang='English'):
             translated = resp.get('choices', [{}])[0].get('message', {}).get('content', '')
             return translated.strip() or text
 
-    return text
+    return finish(text)
 
 
 def _money_to_float(value):
@@ -862,8 +970,9 @@ def extract_structured(file):
         r'patient owes?', r'total due', r'balanc(?:e)?'
     ])
 
-    # CPT codes: 5-digit numbers
-    cpts = re.findall(r"\b(\d{5})\b", text)
+    # Require a CPT/procedure label so ZIP codes and account fragments are not
+    # misreported as medical procedure codes.
+    cpts = re.findall(r"(?:CPT|procedure(?: code)?)\s*[:#-]?\s*(\d{5})\b", text, re.I)
     res['CPT_codes'] = list(dict.fromkeys(cpts))
     icds = re.findall(r"\b([A-Z][0-9][0-9AB](?:\.[A-Z0-9]{1,4})?)\b", text)
     res['ICD10_codes'] = list(dict.fromkeys(icds))
@@ -886,7 +995,32 @@ def extract_structured(file):
 
     return json.dumps(res, ensure_ascii=False, indent=2)
 
+
+def _parsed_document_state(structured_json):
+    try:
+        parsed = json.loads(structured_json)
+        return parsed if isinstance(parsed, dict) and not parsed.get('error') else {}
+    except Exception:
+        return {}
+
+
+def ingest_and_activate(file):
+    status_message = ingest_file(file)
+    structured_json = extract_structured(file)
+    parsed = _parsed_document_state(structured_json)
+    if parsed:
+        status_message += " The parsed bill is now active in chat."
+    return status_message, parsed, structured_json
+
+
+def extract_and_activate(file):
+    structured_json = extract_structured(file)
+    parsed = _parsed_document_state(structured_json)
+    status_message = "Parsed bill is now active in chat." if parsed else "Bill extraction failed."
+    return structured_json, parsed, status_message
+
 with gr.Blocks() as demo:
+    active_document = gr.State({})
     gr.Markdown("# InsureChat - local medical insurance helper")
     with gr.Row():
         with gr.Column(scale=2):
@@ -906,11 +1040,19 @@ with gr.Blocks() as demo:
             extract_btn = gr.Button('Extract Bill / Claim (JSON)')
             extract_output = gr.Textbox(label='Structured insurance fields and estimate', lines=14)
 
-    ingest_btn.click(ingest_file, inputs=file_input, outputs=status)
-    extract_btn.click(extract_structured, inputs=file_input, outputs=extract_output)
+    ingest_btn.click(
+        ingest_and_activate,
+        inputs=file_input,
+        outputs=[status, active_document, extract_output],
+    )
+    extract_btn.click(
+        extract_and_activate,
+        inputs=file_input,
+        outputs=[extract_output, active_document, status],
+    )
 
     # Chat handler: accepts question and language, returns updated chat history
-    def chat_submit(question, lang, chat_history=None):
+    def chat_submit(question, lang, active_bill=None, chat_history=None):
         if chat_history is None:
             chat_history = []
         # Normalize chat_history into list of {'role':..., 'content':...}
@@ -942,7 +1084,7 @@ with gr.Blocks() as demo:
         normalized.append({'role': 'user', 'content': question})
 
         # Produce an English grounded answer, then translate it exactly once.
-        ans = ask_question(question, lang=lang)
+        ans = ask_question(question, lang=lang, active_document=active_bill)
 
         # Return only the selected language instead of English plus a translation.
         try:
@@ -961,7 +1103,7 @@ with gr.Blocks() as demo:
         normalized.append({'role': 'assistant', 'content': ans})
         return normalized
 
-    submit.click(chat_submit, inputs=[inp, lang_dropdown, chat], outputs=chat)
+    submit.click(chat_submit, inputs=[inp, lang_dropdown, active_document, chat], outputs=chat)
 
 if __name__ == '__main__':
     demo.launch()
