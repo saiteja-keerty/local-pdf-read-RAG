@@ -44,6 +44,11 @@ except Exception:
     PdfReader = None
 
 try:
+    import fitz
+except Exception:
+    fitz = None
+
+try:
     import pytesseract
     from PIL import Image
 except Exception:
@@ -234,13 +239,31 @@ def seed_from_kb():
 # Utilities
 
 def extract_text_from_pdf(path):
-    if PdfReader is None:
-        return ""
-    reader = PdfReader(path)
     pages = []
-    for p in reader.pages:
-        pages.append(p.extract_text() or "")
-    return "\n\n".join(pages)
+    if PdfReader is not None:
+        try:
+            reader = PdfReader(path)
+            pages = [p.extract_text() or "" for p in reader.pages]
+        except Exception:
+            pages = []
+
+    text = "\n\n".join(pages).strip()
+    if text:
+        return text
+
+    # Scanned PDFs have no embedded text. Render each page and OCR it locally.
+    if fitz is not None and pytesseract is not None and Image is not None:
+        try:
+            ocr_pages = []
+            with fitz.open(path) as document:
+                for page in document:
+                    pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                    image = Image.open(io.BytesIO(pixmap.tobytes("png")))
+                    ocr_pages.append(pytesseract.image_to_string(image))
+            return "\n\n".join(ocr_pages).strip()
+        except Exception:
+            return ""
+    return ""
 
 
 def ocr_image(path):
@@ -256,6 +279,48 @@ def ocr_image(path):
         return pytesseract.image_to_string(img)
     except Exception:
         return ""
+
+
+def _extract_document_text(path, fileobj=None):
+    """Extract text using file content first, then its extension."""
+    target = fileobj if fileobj is not None else path
+
+    # Gradio uploads can have misleading extensions. Pillow verifies whether
+    # the bytes are actually an image before PDF parsing is attempted.
+    if Image is not None:
+        try:
+            if hasattr(target, 'read'):
+                target.seek(0)
+                data = target.read()
+                target.seek(0)
+                with Image.open(io.BytesIO(data)) as image:
+                    image.load()
+                return ocr_image(io.BytesIO(data)), 'image'
+            with Image.open(target) as image:
+                image.verify()
+            return ocr_image(target), 'image'
+        except Exception:
+            pass
+
+    suffix = Path(str(path)).suffix.lower() if path else ''
+    if suffix == '.pdf':
+        return extract_text_from_pdf(path), 'pdf'
+    if suffix in {'.txt', '.md'}:
+        try:
+            return Path(path).read_text(encoding='utf8'), 'text'
+        except Exception:
+            return '', 'text'
+    return '', 'unknown'
+
+
+def _extraction_error(kind):
+    if kind == 'image' and (pytesseract is None or Image is None):
+        return "OCR is unavailable. Install pytesseract and Pillow, and install the Tesseract OCR application."
+    if kind == 'pdf' and PdfReader is None:
+        return "PDF support is unavailable. Install pypdf."
+    if kind == 'pdf' and (fitz is None or pytesseract is None):
+        return "No embedded PDF text was found. Install pymupdf and pytesseract to OCR scanned PDFs."
+    return "No readable text was found. Check that the file is a valid PDF, image, or UTF-8 text file."
 
 # Gradio handlers
 
@@ -289,25 +354,10 @@ def ingest_file(file):
     if not path and not fileobj:
         return "Could not resolve file path"
 
-    text = ''
-    # determine by filename if available
-    fname = str(path) if path else ''
-    if fname.lower().endswith(('.pdf')):
-        text = extract_text_from_pdf(path)
-    elif fname.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff')) or fileobj is not None:
-        # prefer fileobj if available
-        target = fileobj if fileobj is not None else path
-        text = ocr_image(target)
-    else:
-        try:
-            # try reading as text
-            with open(path, 'r', encoding='utf8') as f:
-                text = f.read()
-        except Exception:
-            text = ''
+    text, kind = _extract_document_text(path, fileobj=fileobj)
 
     if not text:
-        return "No text extracted from the provided file/image"
+        return _extraction_error(kind)
 
     chunks = chunk_text(text)
     metas = [{'source': path, 'chunk': i} for i in range(len(chunks))]
@@ -645,7 +695,9 @@ def _format_money(value):
 
 def _extract_labeled_amount(text, labels):
     for label in labels:
-        pattern = rf"{label}\s*(?:amount|charge|paid|due|owed|responsibility|:)?\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]{{2}})?)"
+        # Keep the match on one OCR line so an address or account number on a
+        # later line cannot become a medical charge.
+        pattern = rf"{label}[ \t]*(?:amount|charge|paid|due|owed|responsibility|:)?[ \t]*\$?[ \t]*([0-9][0-9,]*(?:\.[0-9]{{2}})?)"
         match = re.search(pattern, text, re.I)
         if match:
             return match.group(1).replace(',', '')
@@ -728,14 +780,10 @@ def extract_structured(file):
     if not path:
         return json.dumps({'error': 'no file path'})
 
-    text = ''
-    if str(path).lower().endswith(('.pdf', '.PDF')):
-        text = extract_text_from_pdf(path)
-    else:
-        text = ocr_image(path) or ''
+    text, kind = _extract_document_text(path)
 
     if not text:
-        return json.dumps({'error': 'no text extracted'})
+        return json.dumps({'error': _extraction_error(kind)}, ensure_ascii=False)
 
     schema = {
         'document_type': None,
@@ -788,7 +836,7 @@ def extract_structured(file):
         res['document_type'] = 'explanation_of_benefits'
     elif 'claim' in lower_text:
         res['document_type'] = 'claim'
-    elif 'amount due' in lower_text or 'balance due' in lower_text:
+    elif 'amount due' in lower_text or 'balance due' in lower_text or 'hospital statement' in lower_text:
         res['document_type'] = 'provider_bill'
 
     res['billed_amount'] = _extract_labeled_amount(text, [
@@ -811,22 +859,8 @@ def extract_structured(file):
     ])
     res['patient_owed'] = _extract_labeled_amount(text, [
         r'patient responsibility', r'member responsibility', r'you owe', r'amount due', r'balance due',
-        r'patient owes?', r'total due'
+        r'patient owes?', r'total due', r'balanc(?:e)?'
     ])
-
-    # amounts
-    amounts = re.findall(r"\$?\s*(\d{1,3}(?:[,\d{3}]*)(?:\.\d{2})?)", text)
-    if amounts:
-        # heuristics: billed, allowed, owed -> pick up to first three
-        def clean(a):
-            return a.replace(',', '')
-        cleaned = [clean(a) for a in amounts]
-        if len(cleaned) >= 1 and not res['billed_amount']:
-            res['billed_amount'] = cleaned[0]
-        if len(cleaned) >= 2 and not res['allowed_amount']:
-            res['allowed_amount'] = cleaned[1]
-        if len(cleaned) >= 3 and not res['patient_owed']:
-            res['patient_owed'] = cleaned[2]
 
     # CPT codes: 5-digit numbers
     cpts = re.findall(r"\b(\d{5})\b", text)

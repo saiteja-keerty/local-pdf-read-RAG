@@ -3,6 +3,7 @@ llama-cpp-python
 sentence-transformers
 faiss-cpu
 pypdf
+pymupdf
 pytesseract
 Pillow
 scikit-learn
