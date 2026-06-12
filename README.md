@@ -1,201 +1,142 @@
- Local PDF (Fully Offline)
- Local PDF + Image RAG (Fully Offline)
-📌 Overview
+# InsureChat
 
-This project is a fully local Retrieval-Augmented Generation (RAG) system.
+InsureChat is a local Gradio assistant for U.S. medical insurance definitions, medical bills, EOBs, and claims. It combines a local knowledge base, OCR, FAISS retrieval, and optional GGUF language models through `llama-cpp-python`.
 
-It allows you to:
+No OpenAI API or cloud inference service is used. After setup and model downloads, document processing and inference run locally.
 
-📄 Upload a PDF and ask questions
-🖼 Upload an image (bill, invoice, rulebook page) and extract text via OCR
-📄 + 🖼 Upload both and ask combined questions
-🤖 Get answers using a local LLM (LLaMA 3 via Ollama)
+## Features
 
-⚠ No OpenAI API.
-⚠ No cloud calls.
-⚠ Your data stays on your machine.
+- Answers insurance definitions from local Markdown, text, and PDF knowledge files.
+- OCRs JPG, PNG, TIFF, and scanned PDF medical bills.
+- Extracts billed amount, discounts, patient balance, service date, and related fields.
+- Uses Aya Expanse 8B for local multilingual translation.
+- Supports optional Nemotron Mini 4B and Llama 3.1 8B reasoning models.
+- Continues with deterministic RAG and regex fallbacks when optional GGUF models are missing.
 
-🗂 Files in This Repo
-single_pdf_input.py
+## Requirements
 
-Upload a PDF
+- Python 3.10 or newer
+- Approximately 6 GB of free space for Aya alone
+- Approximately 12-14 GB for all three Q4 GGUF models
+- Tesseract OCR for JPG, PNG, TIFF, and scanned PDF processing
+- Enough system RAM to load the selected model; models are loaded by role and are not all required for every request
 
-Ask questions about that PDF only
+### Install Tesseract
 
-image_pdf_input.py
-
-Upload PDF(s)
-
-Upload Image(s)
-
-Extract text using OCR
-
-Ask cross-document questions
-
-Example:
-Upload solar quote PDF + electricity bill image
-Ask: “Is installing solar profitable?”
-
-🛠 Tools Used
-
-LLM: Ollama (LLaMA 3)
-
-Framework: LangChain
-
-Vector DB: FAISS
-
-Embeddings: Sentence Transformers
-
-OCR: Tesseract
-
-UI: Gradio
-
-Language: Python
-
-⚙️ How It Works (Simple)
-
-Extract text from PDF
-
-Extract text from image (OCR)
-
-Split into chunks
-
-Convert to embeddings
-
-Store in FAISS
-
-Retrieve relevant chunks
-
-Send context to local LLM
-
-Generate grounded answer
-
-💻 Requirements
-
-You must install:
-Python 3.10+
-
-Ollama
-
-Tesseract (for image support)
-
-🔹 Install Ollama
-
-Download:
-https://ollama.com
-
-Then run:
-ollama pull llama3
-
-🔹 Install Tesseract
 Windows:
-Download installer and check Add to PATH
 
-https://github.com/UB-Mannheim/tesseract/wiki
+1. Install Tesseract from [UB Mannheim's Windows builds](https://github.com/UB-Mannheim/tesseract/wiki).
+2. Enable the option to add Tesseract to `PATH`, or install it in `C:\Program Files\Tesseract-OCR`.
 
-Mac:
+macOS:
+
+```bash
 brew install tesseract
+```
 
-Linux:
+Ubuntu/Debian:
+
+```bash
 sudo apt install tesseract-ocr
+```
 
-📦 Setup
-Clone repo:
+## Setup
 
-git clone https://github.com/saiteja-keerty/local-pdf-read-RAG.git
-cd local-pdf-read-RAG
+Create and activate a virtual environment:
 
-
-Create virtual environment:
+```powershell
 python -m venv venv
-
-
-Activate:
-Windows
-
 venv\Scripts\activate
+```
 
+On macOS/Linux, activate it with:
 
-Mac/Linux
-
+```bash
 source venv/bin/activate
+```
 
+Install the InsureChat dependencies:
 
-Install dependencies:
+```powershell
+python -m pip install --upgrade pip
+python -m pip install -r insurechat/requirements.txt
+```
 
-pip install -r requirements.txt
+The requirements install Python packages only. They do not install Tesseract or download multi-gigabyte GGUF model files.
 
-▶ Run
-PDF Only:
-python single_pdf_input.py
+## Download Models
 
-PDF + Image:
-python image_pdf_input.py
+Models are intentionally excluded from Git and are not downloaded automatically. Each user must download the models needed on their own computer.
 
+Translation model:
 
-Open:
+```powershell
+python insurechat/download_models.py --model aya-8b
+```
 
-http://127.0.0.1:7860
+Reasoning model:
 
--  Quick Mac Setup (All-in-One)
-brew install python
-brew install ollama
-brew install tesseract
+```powershell
+python insurechat/download_models.py --model nemotron-4b
+```
 
-ollama pull llama3
+Document extraction and reasoning fallback:
 
-git clone https://github.com/saiteja-keerty/local-pdf-read-RAG.git
-cd local-pdf-read-RAG
+```powershell
+python insurechat/download_models.py --model llama3-8b
+```
 
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python image_pdf_input.py
+The files are stored in `insurechat/models/`:
 
-⚠ Known Limitations
+| Model | Role | Approximate Q4 size |
+| --- | --- | --- |
+| Aya Expanse 8B | Translation | 4.7 GB |
+| Nemotron Mini 4B | Reasoning | 2-3 GB |
+| Llama 3.1 8B | Extraction/reasoning fallback | 4.5-5 GB |
 
-First run downloads embedding model (~90MB)
+The combined parameter count is approximately 20B. The app selects models by role; it does not combine them into one 20B model or load all three for every answer.
 
-Ollama model is large (GBs)
+Without the models, the application still starts:
 
-OCR depends on image clarity
+- Local glossary definitions continue to work.
+- OCR and regex medical-bill extraction continue to work.
+- Translation is unavailable without Aya.
+- LLM reasoning/extraction is unavailable without Nemotron or Llama.
 
-Retrieval may miss relevant chunks
+## Run
 
-LLM reasoning is approximate (not a calculator)
+From the repository root:
 
-🔒 Privacy
+```powershell
+python insurechat/app.py
+```
 
-Fully offline
+Open the URL printed by Gradio, normally <http://127.0.0.1:7860>.
 
-No API keys
+## Troubleshooting
 
-No external services
+### Translation unavailable
 
-Data never leaves your machine
+Confirm that `insurechat/models/aya-expanse-8b-Q4_K_M.gguf` exists, then restart the app.
 
-🎯 Example Questions
+### No text extracted from an image
 
-“Summarize this document.”
+Confirm both components are installed:
 
-“What is the total installation cost?”
+```powershell
+python -c "import pytesseract; print(pytesseract.get_tesseract_version())"
+```
 
-“Is solar installation profitable?”
+If that fails, install `pytesseract` from the requirements and install the separate Tesseract application.
 
-“Explain rule 4.2 from the rulebook.”
+### Scanned PDF has no text
 
-📌 Summary
+Install `pymupdf` and `pytesseract`. InsureChat renders scanned PDF pages locally and sends the rendered images to Tesseract OCR.
 
-This repo demonstrates:
+### llama-cpp tries to compile on Windows
 
-Retrieval-Augmented Generation
+`insurechat/requirements.txt` includes the official prebuilt CPU wheel index. A native compiler should not be required for supported Python versions.
 
-Multi-document reasoning
+## Privacy
 
-OCR integration
-
-Local LLM usage
-
-Cross-platform setup
-
-It simulates a private ChatGPT-like system running entirely on your machine.
+Uploaded documents, OCR text, retrieval, and GGUF inference remain on the local computer. Internet access is only needed during dependency and model installation, or when the app displays an external reference link for a definition not found locally.
