@@ -12,15 +12,19 @@ import json
 import threading
 from pathlib import Path
 import re
-
-import gradio as gr
 import io
 
 # LLM + embeddings + vectorstore imports are optional until models are present
 try:
     from llama_cpp import Llama
+    from llama_cpp import llama_cpp as _llama_backend
+    # Initialize llama.cpp before Torch/FAISS load their native runtimes. On
+    # Windows, doing this in the opposite order can crash backend_init().
+    _llama_backend.llama_backend_init()
 except Exception:
     Llama = None
+
+import gradio as gr
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -70,11 +74,22 @@ SYSTEM_PROMPT = (
 )
 
 MODEL_ROLE_KEYWORDS = {
-    "extract": ("parse", "vl", "vision", "ocr", "asr"),
-    "reason": ("nemotron", "llama", "mellum", "minicpm", "cpm"),
+    "extract": ("llama-3.1", "llama3.1", "meta-llama", "llama", "parse", "vl", "vision", "ocr", "asr"),
+    "reason": ("nemotron", "llama-3.1", "llama3.1", "meta-llama", "llama"),
     "translate": ("aya", "tiny-aya", "expanse", "multilingual"),
     "embed": ("embed", "embedding"),
 }
+
+LANGUAGE_NAMES = {
+    'en': 'English', 'es': 'Spanish', 'fr': 'French', 'hi': 'Hindi',
+    'zh': 'Chinese', 'ar': 'Arabic', 'pt': 'Portuguese', 'de': 'German',
+    'ja': 'Japanese', 'ko': 'Korean', 'ru': 'Russian', 'vi': 'Vietnamese',
+}
+
+ONLINE_GLOSSARY_URL = "https://www.healthcare.gov/glossary/"
+
+_LLM_CACHE = {}
+_LLM_CACHE_LOCK = threading.Lock()
 
 # RAG index: uses FAISS + sentence-transformers when available, otherwise TF-IDF fallback
 class RAGIndex:
@@ -169,16 +184,36 @@ class RAGIndex:
                 if idx < len(self.texts):
                     results.append(self.texts[idx])
             return results
-        # fallback substring match
-        qq = q.lower()
-        hits = [t for t in self.texts if qq in t.lower()]
-        return hits[:topk]
+        # Offline lexical fallback. Whole-question substring matching misses
+        # queries such as "what is a deductible?".
+        stopwords = {'a', 'an', 'and', 'define', 'definition', 'for', 'is', 'meaning',
+                     'of', 'please', 'the', 'to', 'what', 'whats'}
+        query_terms = set(re.findall(r"[a-z0-9]+", str(q).lower())) - stopwords
+        scored = []
+        for text in self.texts:
+            text_terms = set(re.findall(r"[a-z0-9]+", text.lower()))
+            score = len(query_terms & text_terms)
+            if score:
+                scored.append((score, text))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [text for _, text in scored[:topk]]
 
 index = RAGIndex(FAISS_DIR)
 
-# If index is empty, seed it from knowledge_base/*.md so chat works without uploads
+# Seed local Markdown/text/PDF knowledge files. When a .txt and .pdf share a
+# stem, prefer the text copy to avoid indexing the same content twice.
 def seed_from_kb():
-    files = list(KB_DIR.glob('*.md'))
+    selected = {}
+    suffix_priority = {'.txt': 0, '.md': 1, '.pdf': 2}
+    for f in KB_DIR.iterdir():
+        suffix = f.suffix.lower()
+        if suffix not in suffix_priority:
+            continue
+        current = selected.get(f.stem.lower())
+        if current is None or suffix_priority[suffix] < suffix_priority[current.suffix.lower()]:
+            selected[f.stem.lower()] = f
+
+    files = list(selected.values())
     indexed_sources = set()
     for meta in index.meta:
         if isinstance(meta, dict) and meta.get('source'):
@@ -189,7 +224,7 @@ def seed_from_kb():
         if source in indexed_sources:
             continue
         try:
-            txt = f.read_text(encoding='utf8')
+            txt = extract_text_from_pdf(f) if f.suffix.lower() == '.pdf' else f.read_text(encoding='utf8')
             chunks = chunk_text(txt)
             metas = [{'source': source, 'chunk': i, 'kind': 'knowledge_base'} for i in range(len(chunks))]
             index.add_documents(chunks, metas=metas)
@@ -307,15 +342,13 @@ def _search_kb_for_terms(query, limit=4):
     if not wanted and re.search(r"\b(insurance|bill|claim|deduct|copay|coverage|medical term|meaning|define)\b", normalized):
         wanted.update(['deductible', 'copay', 'coinsurance', 'allowed amount', 'eob'])
 
-    if not wanted:
-        return []
-
     hits = []
-    for f in KB_DIR.glob('*.md'):
+    for f in list(KB_DIR.glob('*.md')) + list(KB_DIR.glob('*.txt')):
         try:
-            lines = f.read_text(encoding='utf8').splitlines()
+            text = f.read_text(encoding='utf8')
         except Exception:
             continue
+        lines = text.splitlines()
         for line in lines:
             line_lower = line.lower()
             if any(term in line_lower for term in wanted):
@@ -328,6 +361,22 @@ def _search_kb_for_terms(query, limit=4):
                     hits.append(f"Source: {f}\n{cleaned}")
                     if len(hits) >= limit:
                         return hits
+
+        # Plain-text glossary entries use an uppercase heading followed by a
+        # definition and optional example/note paragraphs.
+        query_terms = set(re.findall(r"[a-z0-9]+", normalized)) - {
+            'a', 'an', 'define', 'definition', 'is', 'meaning', 'of', 'please', 'the', 'what', 'whats'
+        }
+        for block in re.split(r"\n\s*\n", text):
+            block_lines = [line.strip() for line in block.splitlines() if line.strip()]
+            if len(block_lines) < 2:
+                continue
+            heading = block_lines[0]
+            heading_terms = set(re.findall(r"[a-z0-9]+", heading.lower()))
+            if query_terms and query_terms <= heading_terms and heading.upper() == heading:
+                hits.append(f"Source: {f}\n{block.strip()}")
+                if len(hits) >= limit:
+                    return hits
     return hits
 
 
@@ -366,10 +415,33 @@ def _parse_term_row(text):
                 "look_for": cells[2],
                 "example": cells[3],
             }
+    plain_lines = [part.strip() for part in line.splitlines() if part.strip()]
+    if len(plain_lines) >= 2 and plain_lines[0].upper() == plain_lines[0]:
+        example = ""
+        definition_parts = []
+        for part in plain_lines[1:]:
+            if part.lower().startswith('example:'):
+                example = part.split(':', 1)[1].strip()
+            elif not part.lower().startswith('note:'):
+                definition_parts.append(part)
+        return {
+            "term": plain_lines[0],
+            "definition": " ".join(definition_parts),
+            "look_for": "",
+            "example": example,
+        }
     return None
 
 
-def _simple_context_answer(question, chunks, lang='en'):
+def _simple_context_answer(question, chunks):
+    source_labels = []
+    for chunk in chunks:
+        match = re.match(r"Source:\s*(.+)\n", str(chunk))
+        if match:
+            label = _clean_source_label(match.group(1))
+            if label and label not in source_labels:
+                source_labels.append(label)
+
     rows = []
     for chunk in chunks:
         row = _parse_term_row(chunk)
@@ -378,13 +450,6 @@ def _simple_context_answer(question, chunks, lang='en'):
 
     if rows:
         primary = rows[0]
-        query_l = (question or "").lower()
-        for row in rows[1:]:
-            if any(token in row['term'].lower() for token in query_l.split()) and (row.get('example') or row.get('look_for')):
-                if not primary.get('example') and row.get('example'):
-                    primary['example'] = row['example']
-                if not primary.get('look_for') and row.get('look_for'):
-                    primary['look_for'] = row['look_for']
         answer = f"{primary['term']}: {primary['definition']}"
         if primary.get('example'):
             answer += f"\n\nExample: {primary['example']}"
@@ -399,13 +464,8 @@ def _simple_context_answer(question, chunks, lang='en'):
                 cleaned.append(text)
         answer = "\n\n".join(cleaned) or "I do not have enough local context yet. Upload a bill/EOB/claim or ask about a common insurance term."
 
-    if lang and lang.lower() != 'en':
-        try:
-            translated = translate_text(answer, target_lang=lang)
-            if translated and translated.strip():
-                return translated
-        except Exception:
-            pass
+    if source_labels:
+        answer += f"\n\nSource: {source_labels[0]}"
     return answer
 
 
@@ -415,31 +475,15 @@ def ask_question(q, lang='en'):
     greetings = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
     if isinstance(q, str) and q.strip().lower() in greetings:
         return "Hi — I can help with your bill or insurance questions. Ask me about a term (e.g. 'what is a copay') or upload a bill."
-    # If user asked in non-English, translate question to English for retrieval
+    # Try the local glossary before translating. This handles an English
+    # question with a non-English answer language without an unnecessary model call.
+    preliminary_kb_hits = _search_kb_for_terms(q)
+
+    # Translate the question locally with Aya for English-language retrieval.
     q_for_search = q
     try:
-        if lang and lang.lower() != 'en':
-            # translate question FROM lang -> en using transformers fallback if available
-            if pipeline is not None:
-                model_map_to_en = {
-                    'es': 'Helsinki-NLP/opus-mt-es-en', 'fr': 'Helsinki-NLP/opus-mt-fr-en',
-                    'hi': 'Helsinki-NLP/opus-mt-hi-en', 'de': 'Helsinki-NLP/opus-mt-de-en',
-                    'pt': 'Helsinki-NLP/opus-mt-pt-en', 'ru': 'Helsinki-NLP/opus-mt-ru-en',
-                    'ja': 'Helsinki-NLP/opus-mt-ja-en', 'ko': 'Helsinki-NLP/opus-mt-ko-en',
-                    'zh': 'Helsinki-NLP/opus-mt-zh-en', 'ar': 'Helsinki-NLP/opus-mt-ar-en',
-                    'vi': 'Helsinki-NLP/opus-mt-vi-en',
-                }
-                m = model_map_to_en.get(lang.lower())
-                if m:
-                    try:
-                        trans = pipeline('translation', model=m)
-                        out = trans(q[:4000])
-                        if isinstance(out, list) and out:
-                            q_for_search = out[0].get('translation_text', q)
-                    except Exception:
-                        q_for_search = q
-            else:
-                q_for_search = q
+        if lang and lang.lower() != 'en' and not preliminary_kb_hits:
+            q_for_search = translate_text(q, target_lang='en', source_lang=lang)
     except Exception:
         q_for_search = q
 
@@ -456,9 +500,13 @@ def ask_question(q, lang='en'):
     except Exception:
         is_definition = False
 
-    kb_hits = _search_kb_for_terms(q_for_search)
+    kb_hits = preliminary_kb_hits or _search_kb_for_terms(q_for_search)
     if kb_hits:
         chunks = kb_hits + [chunk for chunk in chunks if chunk not in kb_hits]
+    elif is_definition:
+        # A similarity hit is not enough evidence that the requested term has
+        # a local definition.
+        chunks = []
     # Build a compact context: include short excerpts and source metadata (if available)
     context_parts = []
     for chunk in chunks:
@@ -476,27 +524,30 @@ def ask_question(q, lang='en'):
 
     context = "\n\n---\n\n".join(context_parts)
 
-    # If no context and definition question, allow model to answer from general knowledge
+    if not context and is_definition:
+        return (
+            "I could not find that definition in the local knowledge base. "
+            "I have this trusted glossary reference that may contain what you need: "
+            f"{ONLINE_GLOSSARY_URL}"
+        )
+
     prompt_suffix = (
         "Answer concisely. Use plain language for a non-U.S. user. "
         "If amounts are involved, show the calculation steps and assumptions. Include Source when available."
     )
-    if not context and is_definition:
-        prompt_suffix = "If DOCUMENT CONTEXT is empty and this is a definition question, answer from general knowledge concisely and say no local source was found."
-
     prompt = (
         f"{SYSTEM_PROMPT}\n\nDOCUMENT CONTEXT:\n{context}\n\n"
         f"Question: {q}\n{prompt_suffix}"
     )
 
     if Llama is None:
-        return _simple_context_answer(q, chunks, lang=lang)
+        return _simple_context_answer(q, chunks)
 
     llm_path = _select_model_for_role("reason")
     if not llm_path:
-        return _simple_context_answer(q, chunks, lang=lang)
+        return _simple_context_answer(q, chunks)
 
-    llm = Llama(model=llm_path, n_threads=max(1, os.cpu_count() // 2))
+    llm = _get_llm(llm_path)
 
     # Keep prompts compact by limiting context length
     resp = llm(prompt=prompt, max_tokens=512)
@@ -525,59 +576,54 @@ def _select_model_for_role(role):
         if found:
             return found
 
-    # Prefer smaller local models first so the app remains laptop-friendly.
-    return str(sorted(ggufs, key=lambda p: p.stat().st_size)[0])
+    # Never substitute a translation model for reasoning (or vice versa).
+    return None
 
 
-def translate_text(text, target_lang='en'):
-    # Prefer aya-expanse GGUF via llama-cpp
+def _get_llm(model_path):
+    """Load each local GGUF once and reuse it for later requests."""
+    if Llama is None or not model_path:
+        return None
+    with _LLM_CACHE_LOCK:
+        if model_path not in _LLM_CACHE:
+            _LLM_CACHE[model_path] = Llama(
+                model_path=model_path,
+                n_ctx=1024,
+                n_threads=max(1, os.cpu_count() // 2),
+                n_gpu_layers=-1,
+                verbose=False,
+            )
+        return _LLM_CACHE[model_path]
+
+
+def translate_text(text, target_lang='en', source_lang='English'):
+    """Translate with the local Aya GGUF only; this function never uses the internet."""
+    target_code = (target_lang or 'en').lower()
+    if target_code == (source_lang or '').lower():
+        return text
+
     if Llama is not None:
         aya_path = _select_model_for_role("translate")
         if aya_path:
-            llm = Llama(model=aya_path, n_threads=max(1, os.cpu_count() // 2))
-            prompt = f"Translate the following text to {target_lang}:\n\n{text}"
-            resp = llm(prompt=prompt, max_tokens=512)
-            return resp.get('choices',[{}])[0].get('text') or resp.get('text') or text
-
-    # Transformers Helsinki-NLP fallback (best-effort)
-    if pipeline is not None:
-        # mapping for en->XX and XX->en
-        model_map_en_to = {
-            'es': 'Helsinki-NLP/opus-mt-en-es', 'fr': 'Helsinki-NLP/opus-mt-en-fr',
-            'hi': 'Helsinki-NLP/opus-mt-en-hi', 'de': 'Helsinki-NLP/opus-mt-en-de',
-            'pt': 'Helsinki-NLP/opus-mt-en-pt', 'ru': 'Helsinki-NLP/opus-mt-en-ru',
-            'ja': 'Helsinki-NLP/opus-mt-en-ja', 'ko': 'Helsinki-NLP/opus-mt-en-ko',
-            'zh': 'Helsinki-NLP/opus-mt-en-zh', 'ar': 'Helsinki-NLP/opus-mt-en-ar',
-            'vi': 'Helsinki-NLP/opus-mt-en-vi',
-        }
-        model_map_to_en = {k: v.replace('-en-', f'-{k}-en') for k, v in model_map_en_to.items()}
-
-        # If caller wants English, attempt source->en translation by probing common models
-        if target_lang.lower() == 'en':
-            # try likely source languages in a small loop; return first useful translation
-            for lang_code, model_name in model_map_to_en.items():
-                try:
-                    trans = pipeline('translation', model=model_name)
-                    out = trans(text[:4000])
-                    if isinstance(out, list) and out:
-                        cand = out[0].get('translation_text', '')
-                        if cand and cand.strip() and cand.strip().lower() != text.strip().lower():
-                            return cand
-                except Exception:
-                    continue
-            # fallback: return original if no translator succeeded
-            return text
-
-        # translate from en->target
-        model_name = model_map_en_to.get(target_lang.lower())
-        if model_name:
-            try:
-                trans = pipeline('translation', model=model_name)
-                out = trans(text[:4000])
-                if isinstance(out, list) and out:
-                    return out[0].get('translation_text', text)
-            except Exception:
-                pass
+            source_name = LANGUAGE_NAMES.get((source_lang or '').lower(), source_lang or 'the source language')
+            target_name = LANGUAGE_NAMES.get(target_code, target_lang)
+            llm = _get_llm(aya_path)
+            resp = llm.create_chat_completion(
+                messages=[
+                    {
+                        'role': 'system',
+                        'content': (
+                            f"Translate from {source_name} to {target_name}. Return only the translation, "
+                            "without notes, labels, or the original text."
+                        ),
+                    },
+                    {'role': 'user', 'content': text},
+                ],
+                max_tokens=min(384, max(96, len(text) * 2)),
+                temperature=0.1,
+            )
+            translated = resp.get('choices', [{}])[0].get('message', {}).get('content', '')
+            return translated.strip() or text
 
     return text
 
@@ -713,7 +759,7 @@ def extract_structured(file):
 
     extract_model_path = _select_model_for_role("extract") or _select_model_for_role("reason")
     if Llama is not None and extract_model_path:
-        llm = Llama(model=extract_model_path, n_threads=max(1, os.cpu_count() // 2))
+        llm = _get_llm(extract_model_path)
         prompt = (
             "Extract the following fields from the document and return valid JSON only. "
             "Fields: document_type, member_id, patient_name, provider_name, service_date, billed_amount, "
@@ -861,19 +907,22 @@ with gr.Blocks() as demo:
         # Add user message
         normalized.append({'role': 'user', 'content': question})
 
-        # Produce answer (English)
+        # Produce an English grounded answer, then translate it exactly once.
         ans = ask_question(question, lang=lang)
 
-        # If a non-English language is requested, provide translation below the English answer
+        # Return only the selected language instead of English plus a translation.
         try:
             if lang and lang.lower() != 'en':
-                translated = translate_text(ans, target_lang=lang)
+                translated = translate_text(ans, target_lang=lang, source_lang='en')
                 if translated and translated.strip() and translated.strip() != ans.strip():
-                    ans = f"{ans}\n\nTranslation:\n{translated}"
+                    ans = translated.strip()
                 else:
-                    ans = f"{ans}\n\nTranslation: (translation not available)"
+                    ans = (
+                        f"Translation to {LANGUAGE_NAMES.get(lang, lang)} is unavailable because the local "
+                        "Aya translation model is not installed.\n\n" + ans
+                    )
         except Exception:
-            ans = f"{ans}\n\nTranslation: (translation failed)"
+            ans = f"Translation failed; showing the English answer instead.\n\n{ans}"
 
         normalized.append({'role': 'assistant', 'content': ans})
         return normalized
