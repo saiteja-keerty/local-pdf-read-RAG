@@ -100,6 +100,7 @@ INSURANCE_TERM_ALIASES = {
     'coinsurance': ['coinsurance', 'co-insurance'],
     'out-of-pocket maximum': ['out-of-pocket maximum', 'out of pocket maximum', 'oop max'],
     'allowed amount': ['allowed amount', 'allowable', 'eligible expense', 'negotiated rate'],
+    'discount': ['discount', 'adjustment', 'network discount', 'provider discount'],
     'eob': ['eob', 'explanation of benefits'],
     'claim': ['claim'],
     'premium': ['premium'],
@@ -195,14 +196,23 @@ class RAGIndex:
 
         self.save()
 
-    def query(self, q, topk=6):
+    def query(self, q, topk=6, kind=None):
+        def matches_kind(idx):
+            if kind is None:
+                return True
+            meta = self.meta[idx] if idx < len(self.meta) else {}
+            return isinstance(meta, dict) and meta.get('kind') == kind
+
         if self.embedding_model is not None and self.use_faiss and self.faiss_index is not None:
             qv = self._embed([q])
-            D, I = self.faiss_index.search(qv, topk)
+            search_count = len(self.texts) if kind is not None else topk
+            D, I = self.faiss_index.search(qv, max(search_count, topk))
             results = []
             for idx in I[0]:
-                if idx < len(self.texts):
+                if 0 <= idx < len(self.texts) and matches_kind(idx):
                     results.append(self.texts[idx])
+                    if len(results) >= topk:
+                        break
             return results
         # Offline lexical fallback. Whole-question substring matching misses
         # queries such as "what is a deductible?".
@@ -210,7 +220,9 @@ class RAGIndex:
                      'of', 'please', 'the', 'to', 'what', 'whats'}
         query_terms = set(re.findall(r"[a-z0-9]+", str(q).lower())) - stopwords
         scored = []
-        for text in self.texts:
+        for idx, text in enumerate(self.texts):
+            if not matches_kind(idx):
+                continue
             text_terms = set(re.findall(r"[a-z0-9]+", text.lower()))
             score = len(query_terms & text_terms)
             if score:
@@ -375,9 +387,28 @@ def ingest_file(file):
         return _extraction_error(kind)
 
     chunks = chunk_text(text)
-    metas = [{'source': path, 'chunk': i} for i in range(len(chunks))]
-    index.add_documents(chunks, metas=metas)
     return f"Ingested {path} (chunks={len(chunks)})"
+
+
+def _document_context_state(file, parsed):
+    """Attach the current upload's text to session state without persisting it."""
+    if not parsed:
+        return {}
+
+    path = None
+    fileobj = None
+    if isinstance(file, dict):
+        path = file.get('tmp_path') or file.get('name') or file.get('file')
+        fileobj = file.get('file')
+    else:
+        path = getattr(file, 'name', None) or file
+        fileobj = getattr(file, 'file', None)
+
+    text, _ = _extract_document_text(path, fileobj=fileobj)
+    state = dict(parsed)
+    state['_document_chunks'] = chunk_text(text) if text else []
+    state['_source_name'] = Path(str(path)).name if path else 'uploaded document'
+    return state
 
 
 def _search_kb_for_terms(query, limit=4):
@@ -393,7 +424,8 @@ def _search_kb_for_terms(query, limit=4):
     if not wanted and re.search(r"\b(insurance|bill|claim|deduct|copay|coverage|medical term|meaning|define)\b", normalized):
         wanted.update(['deductible', 'copay', 'coinsurance', 'allowed amount', 'eob'])
 
-    hits = []
+    exact_hits = []
+    related_hits = []
     for f in list(KB_DIR.glob('*.md')) + list(KB_DIR.glob('*.txt')):
         try:
             text = f.read_text(encoding='utf8')
@@ -408,10 +440,12 @@ def _search_kb_for_terms(query, limit=4):
                     continue
                 if cleaned.startswith('|---'):
                     continue
-                if cleaned and cleaned not in hits:
-                    hits.append(f"Source: {f}\n{cleaned}")
-                    if len(hits) >= limit:
-                        return hits
+                if cleaned:
+                    hit = f"Source: {f}\n{cleaned}"
+                    heading = cleaned.strip('|').split('|', 1)[0].strip().lower()
+                    target = exact_hits if any(term in heading for term in wanted) else related_hits
+                    if hit not in exact_hits and hit not in related_hits:
+                        target.append(hit)
 
         # Plain-text glossary entries use an uppercase heading followed by a
         # definition and optional example/note paragraphs.
@@ -425,10 +459,10 @@ def _search_kb_for_terms(query, limit=4):
             heading = block_lines[0]
             heading_terms = set(re.findall(r"[a-z0-9]+", heading.lower()))
             if query_terms and query_terms <= heading_terms and heading.upper() == heading:
-                hits.append(f"Source: {f}\n{block.strip()}")
-                if len(hits) >= limit:
-                    return hits
-    return hits
+                hit = f"Source: {f}\n{block.strip()}"
+                if hit not in exact_hits and hit not in related_hits:
+                    exact_hits.append(hit)
+    return (exact_hits + related_hits)[:limit]
 
 
 def _correct_insurance_terms(query):
@@ -469,7 +503,7 @@ def _is_definition_question(question):
 
 
 def _answer_from_active_bill(question, parsed):
-    if not isinstance(parsed, dict) or parsed.get('error'):
+    if not isinstance(parsed, dict) or not parsed or parsed.get('error'):
         return None
 
     q = (question or '').lower()
@@ -654,26 +688,32 @@ def ask_question(q, lang='en', active_document=None):
     except Exception:
         q_for_search = corrected_q
 
-    chunks = index.query(q_for_search, topk=6)
+    active_chunks = active_document.get('_document_chunks', []) if isinstance(active_document, dict) else []
+    chunks = list(active_chunks[:6]) if active_chunks else index.query(
+        q_for_search, topk=6, kind='knowledge_base'
+    )
     # If no retrieved chunks and this looks like a definition request, try KB files directly
     is_definition = _is_definition_question(corrected_q)
 
-    kb_hits = preliminary_kb_hits or _search_kb_for_terms(q_for_search)
+    kb_hits = [] if active_chunks else (preliminary_kb_hits or _search_kb_for_terms(q_for_search))
     if kb_hits:
         chunks = kb_hits + [chunk for chunk in chunks if chunk not in kb_hits]
-    elif is_definition:
+    elif is_definition and not active_chunks:
         # A similarity hit is not enough evidence that the requested term has
         # a local definition.
         chunks = []
     # Build a compact context: include short excerpts and source metadata (if available)
     context_parts = []
     for chunk in chunks:
-        try:
-            idx = index.texts.index(chunk)
-            meta = index.meta[idx] if idx < len(index.meta) else {}
-            src = meta.get('source', '') if isinstance(meta, dict) else ''
-        except Exception:
-            src = ''
+        if active_chunks:
+            src = active_document.get('_source_name', 'uploaded document')
+        else:
+            try:
+                idx = index.texts.index(chunk)
+                meta = index.meta[idx] if idx < len(index.meta) else {}
+                src = meta.get('source', '') if isinstance(meta, dict) else ''
+            except Exception:
+                src = ''
         excerpt = (chunk or '').strip()[:500]
         if src:
             context_parts.append(f"Source: {_clean_source_label(src)}\n{excerpt}")
@@ -1007,7 +1047,7 @@ def _parsed_document_state(structured_json):
 def ingest_and_activate(file):
     status_message = ingest_file(file)
     structured_json = extract_structured(file)
-    parsed = _parsed_document_state(structured_json)
+    parsed = _document_context_state(file, _parsed_document_state(structured_json))
     if parsed:
         status_message += " The parsed bill is now active in chat."
     return status_message, parsed, structured_json
@@ -1015,7 +1055,7 @@ def ingest_and_activate(file):
 
 def extract_and_activate(file):
     structured_json = extract_structured(file)
-    parsed = _parsed_document_state(structured_json)
+    parsed = _document_context_state(file, _parsed_document_state(structured_json))
     status_message = "Parsed bill is now active in chat." if parsed else "Bill extraction failed."
     return structured_json, parsed, status_message
 
