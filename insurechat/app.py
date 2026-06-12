@@ -11,6 +11,7 @@ import os
 import json
 import threading
 from pathlib import Path
+import re
 
 import gradio as gr
 import io
@@ -61,12 +62,19 @@ MODELS_DIR.mkdir(exist_ok=True)
 
 # System prompt
 SYSTEM_PROMPT = (
-    "You are InsureChat, a US medical insurance assistant specializing in UnitedHealthcare.\n"
-    "When the user's question can be answered from the provided DOCUMENT CONTEXT, answer concisely (max 3 sentences) and cite the source.\n"
-    "If the question is a simple greeting, reply briefly without including document text.\n"
-    "If the information is not present in DOCUMENT CONTEXT, say you don't know and offer to search or ingest the user's bill.\n"
-    "For definition/term questions (e.g., 'what is a copay'), give a short definition and cite the source if available."
+    "You are InsureChat, a local medical insurance assistant for people who may be new to U.S. health insurance.\n"
+    "Explain terms in plain language, define acronyms, and avoid assuming the user knows words like copay, deductible, EOB, claim, or allowed amount.\n"
+    "Use DOCUMENT CONTEXT first. If context comes from an uploaded bill, EOB, claim, or plan document, cite the source and explain any math step by step.\n"
+    "Never include local file paths in the answer. If context is missing, say what information is needed instead of guessing. Do not provide legal, tax, or medical advice.\n"
+    "For definitions, answer briefly with a simple example and source when available."
 )
+
+MODEL_ROLE_KEYWORDS = {
+    "extract": ("parse", "vl", "vision", "ocr", "asr"),
+    "reason": ("nemotron", "llama", "mellum", "minicpm", "cpm"),
+    "translate": ("aya", "tiny-aya", "expanse", "multilingual"),
+    "embed": ("embed", "embedding"),
+}
 
 # RAG index: uses FAISS + sentence-transformers when available, otherwise TF-IDF fallback
 class RAGIndex:
@@ -170,20 +178,23 @@ index = RAGIndex(FAISS_DIR)
 
 # If index is empty, seed it from knowledge_base/*.md so chat works without uploads
 def seed_from_kb():
-    if index.texts:
-        return
     files = list(KB_DIR.glob('*.md'))
+    indexed_sources = set()
+    for meta in index.meta:
+        if isinstance(meta, dict) and meta.get('source'):
+            indexed_sources.add(str(meta.get('source')))
+
     for f in files:
+        source = str(f)
+        if source in indexed_sources:
+            continue
         try:
             txt = f.read_text(encoding='utf8')
             chunks = chunk_text(txt)
-            metas = [{'source': str(f), 'chunk': i} for i in range(len(chunks))]
+            metas = [{'source': source, 'chunk': i, 'kind': 'knowledge_base'} for i in range(len(chunks))]
             index.add_documents(chunks, metas=metas)
         except Exception:
             pass
-
-seed_from_kb()
-print(f"[insurechat] RAG index loaded {len(index.texts)} chunks from knowledge_base or previous saves")
 
 # Utilities
 
@@ -222,6 +233,10 @@ def chunk_text(text, chunk_size=900, overlap=100):
         out.append(text[start:end])
         start = end - overlap if end - overlap > start else end
     return out
+
+
+seed_from_kb()
+print(f"[insurechat] RAG index loaded {len(index.texts)} chunks from knowledge_base or previous saves")
 
 
 def ingest_file(file):
@@ -263,6 +278,135 @@ def ingest_file(file):
     metas = [{'source': path, 'chunk': i} for i in range(len(chunks))]
     index.add_documents(chunks, metas=metas)
     return f"Ingested {path} (chunks={len(chunks)})"
+
+
+def _search_kb_for_terms(query, limit=4):
+    if not isinstance(query, str) or not query.strip():
+        return []
+
+    normalized = query.lower()
+    aliases = {
+        'copay': ['copay', 'copayment', 'co-pay'],
+        'deductible': ['deductible'],
+        'coinsurance': ['coinsurance', 'co-insurance'],
+        'out-of-pocket maximum': ['out-of-pocket', 'oop', 'maximum'],
+        'allowed amount': ['allowed amount', 'allowable', 'eligible expense', 'negotiated rate'],
+        'eob': ['eob', 'explanation of benefits'],
+        'claim': ['claim'],
+        'premium': ['premium'],
+        'in-network': ['in-network', 'network'],
+        'out-of-network': ['out-of-network', 'non-participating'],
+        'balance billing': ['balance billing', 'balance bill'],
+    }
+
+    wanted = set()
+    for canonical, terms in aliases.items():
+        if any(term in normalized for term in terms):
+            wanted.add(canonical)
+
+    if not wanted and re.search(r"\b(insurance|bill|claim|deduct|copay|coverage|medical term|meaning|define)\b", normalized):
+        wanted.update(['deductible', 'copay', 'coinsurance', 'allowed amount', 'eob'])
+
+    if not wanted:
+        return []
+
+    hits = []
+    for f in KB_DIR.glob('*.md'):
+        try:
+            lines = f.read_text(encoding='utf8').splitlines()
+        except Exception:
+            continue
+        for line in lines:
+            line_lower = line.lower()
+            if any(term in line_lower for term in wanted):
+                cleaned = line.strip()
+                if not (cleaned.startswith('|') or cleaned.startswith('- ')):
+                    continue
+                if cleaned.startswith('|---'):
+                    continue
+                if cleaned and cleaned not in hits:
+                    hits.append(f"Source: {f}\n{cleaned}")
+                    if len(hits) >= limit:
+                        return hits
+    return hits
+
+
+def _clean_source_label(source):
+    if not source:
+        return ""
+    try:
+        name = Path(str(source)).name
+    except Exception:
+        name = str(source)
+    if name == "insurance_glossary.md":
+        return "insurance glossary"
+    if name == "medical_insurance_terms.md":
+        return "medical insurance terms"
+    return name
+
+
+def _parse_term_row(text):
+    line = (text or "").strip()
+    if line.startswith("Source:"):
+        line = line.split("\n", 1)[1].strip() if "\n" in line else ""
+    if line.startswith("- ") and ":" in line:
+        term, definition = line[2:].split(":", 1)
+        return {
+            "term": term.strip(),
+            "definition": definition.strip(),
+            "look_for": "",
+            "example": "",
+        }
+    if line.startswith("|"):
+        cells = [cell.strip().strip('"') for cell in line.strip("|").split("|")]
+        if len(cells) >= 4 and cells[0].lower() != "term":
+            return {
+                "term": cells[0],
+                "definition": cells[1],
+                "look_for": cells[2],
+                "example": cells[3],
+            }
+    return None
+
+
+def _simple_context_answer(question, chunks, lang='en'):
+    rows = []
+    for chunk in chunks:
+        row = _parse_term_row(chunk)
+        if row and row not in rows:
+            rows.append(row)
+
+    if rows:
+        primary = rows[0]
+        query_l = (question or "").lower()
+        for row in rows[1:]:
+            if any(token in row['term'].lower() for token in query_l.split()) and (row.get('example') or row.get('look_for')):
+                if not primary.get('example') and row.get('example'):
+                    primary['example'] = row['example']
+                if not primary.get('look_for') and row.get('look_for'):
+                    primary['look_for'] = row['look_for']
+        answer = f"{primary['term']}: {primary['definition']}"
+        if primary.get('example'):
+            answer += f"\n\nExample: {primary['example']}"
+        if primary.get('look_for'):
+            look_for = primary['look_for'].replace('"', '').rstrip('.')
+            answer += f"\n\nOn a bill or EOB, look for: {look_for}."
+    else:
+        cleaned = []
+        for chunk in chunks[:3]:
+            text = re.sub(r"Source:\s*.*\n", "", str(chunk)).strip()
+            if text:
+                cleaned.append(text)
+        answer = "\n\n".join(cleaned) or "I do not have enough local context yet. Upload a bill/EOB/claim or ask about a common insurance term."
+
+    if lang and lang.lower() != 'en':
+        try:
+            translated = translate_text(answer, target_lang=lang)
+            if translated and translated.strip():
+                return translated
+        except Exception:
+            pass
+    return answer
 
 
 def ask_question(q, lang='en'):
@@ -312,21 +456,9 @@ def ask_question(q, lang='en'):
     except Exception:
         is_definition = False
 
-    if not chunks and is_definition:
-        # search KB_DIR markdown files for term occurrences
-        term = (q or '').lower()
-        kb_hits = []
-        try:
-            for f in KB_DIR.glob('*.md'):
-                txt = f.read_text(encoding='utf8')
-                for line in txt.splitlines():
-                    if term in line.lower():
-                        kb_hits.append(f"Source: {f}\n" + line.strip())
-                        break
-        except Exception:
-            kb_hits = []
-        if kb_hits:
-            chunks = kb_hits
+    kb_hits = _search_kb_for_terms(q_for_search)
+    if kb_hits:
+        chunks = kb_hits + [chunk for chunk in chunks if chunk not in kb_hits]
     # Build a compact context: include short excerpts and source metadata (if available)
     context_parts = []
     for chunk in chunks:
@@ -338,16 +470,19 @@ def ask_question(q, lang='en'):
             src = ''
         excerpt = (chunk or '').strip()[:500]
         if src:
-            context_parts.append(f"Source: {src}\n{excerpt}")
+            context_parts.append(f"Source: {_clean_source_label(src)}\n{excerpt}")
         else:
             context_parts.append(excerpt)
 
     context = "\n\n---\n\n".join(context_parts)
 
     # If no context and definition question, allow model to answer from general knowledge
-    prompt_suffix = "Answer concisely (max 3 sentences). If you quote the document, include Source: in brackets."
+    prompt_suffix = (
+        "Answer concisely. Use plain language for a non-U.S. user. "
+        "If amounts are involved, show the calculation steps and assumptions. Include Source when available."
+    )
     if not context and is_definition:
-        prompt_suffix = "If DOCUMENT CONTEXT is empty and this is a definition question, answer from general knowledge concisely (max 3 sentences)."
+        prompt_suffix = "If DOCUMENT CONTEXT is empty and this is a definition question, answer from general knowledge concisely and say no local source was found."
 
     prompt = (
         f"{SYSTEM_PROMPT}\n\nDOCUMENT CONTEXT:\n{context}\n\n"
@@ -355,23 +490,12 @@ def ask_question(q, lang='en'):
     )
 
     if Llama is None:
-        # fallback: return retrieved context as answer (translated back if needed)
-        answer = context[:1500] or "(no context)"
-        if lang and lang.lower() != 'en':
-            try:
-                return translate_text(answer, target_lang=lang)
-            except Exception:
-                return answer
-        return answer
+        return _simple_context_answer(q, chunks, lang=lang)
 
-    # find a GGUF model in models dir
-    ggufs = list(MODELS_DIR.glob('*.gguf'))
-    if not ggufs:
-        return "No GGUF Llama model found in models/. Run download_models.py"
+    llm_path = _select_model_for_role("reason")
+    if not llm_path:
+        return _simple_context_answer(q, chunks, lang=lang)
 
-    # Prefer the primary LLM (llama3-8b) if present
-    ggufs_sorted = sorted(ggufs, key=lambda p: 'llama' not in p.name)
-    llm_path = str(ggufs_sorted[0])
     llm = Llama(model=llm_path, n_threads=max(1, os.cpu_count() // 2))
 
     # Keep prompts compact by limiting context length
@@ -390,10 +514,25 @@ def _find_gguf_by_keyword(keyword):
     return None
 
 
+def _select_model_for_role(role):
+    ggufs = list(MODELS_DIR.glob('*.gguf'))
+    if not ggufs:
+        return None
+
+    keywords = MODEL_ROLE_KEYWORDS.get(role, ())
+    for keyword in keywords:
+        found = _find_gguf_by_keyword(keyword)
+        if found:
+            return found
+
+    # Prefer smaller local models first so the app remains laptop-friendly.
+    return str(sorted(ggufs, key=lambda p: p.stat().st_size)[0])
+
+
 def translate_text(text, target_lang='en'):
     # Prefer aya-expanse GGUF via llama-cpp
     if Llama is not None:
-        aya_path = _find_gguf_by_keyword('aya') or _find_gguf_by_keyword('expanse')
+        aya_path = _select_model_for_role("translate")
         if aya_path:
             llm = Llama(model=aya_path, n_threads=max(1, os.cpu_count() // 2))
             prompt = f"Translate the following text to {target_lang}:\n\n{text}"
@@ -443,6 +582,96 @@ def translate_text(text, target_lang='en'):
     return text
 
 
+def _money_to_float(value):
+    if value is None:
+        return None
+    try:
+        return float(str(value).replace('$', '').replace(',', '').strip())
+    except Exception:
+        return None
+
+
+def _format_money(value):
+    if value is None:
+        return None
+    return f"${value:,.2f}"
+
+
+def _extract_labeled_amount(text, labels):
+    for label in labels:
+        pattern = rf"{label}\s*(?:amount|charge|paid|due|owed|responsibility|:)?\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]{{2}})?)"
+        match = re.search(pattern, text, re.I)
+        if match:
+            return match.group(1).replace(',', '')
+    return None
+
+
+def estimate_patient_responsibility(fields):
+    billed = _money_to_float(fields.get('billed_amount'))
+    allowed = _money_to_float(fields.get('allowed_amount'))
+    plan_paid = _money_to_float(fields.get('plan_paid'))
+    deductible = _money_to_float(fields.get('deductible'))
+    copay = _money_to_float(fields.get('copay'))
+    coinsurance = _money_to_float(fields.get('coinsurance'))
+    noncovered = _money_to_float(fields.get('noncovered_amount'))
+    explicit_owed = _money_to_float(fields.get('patient_owed'))
+
+    steps = []
+    if explicit_owed is not None:
+        steps.append(f"Document lists patient responsibility as {_format_money(explicit_owed)}.")
+        return {
+            'estimated_patient_responsibility': _format_money(explicit_owed),
+            'calculation_steps': steps,
+            'confidence': 'high',
+        }
+
+    total = 0.0
+    if deductible:
+        total += deductible
+        steps.append(f"Deductible applied: {_format_money(deductible)}.")
+    if copay:
+        total += copay
+        steps.append(f"Copay: {_format_money(copay)}.")
+    if coinsurance:
+        total += coinsurance
+        steps.append(f"Coinsurance: {_format_money(coinsurance)}.")
+    if noncovered:
+        total += noncovered
+        steps.append(f"Non-covered amount: {_format_money(noncovered)}.")
+
+    if total:
+        return {
+            'estimated_patient_responsibility': _format_money(total),
+            'calculation_steps': steps,
+            'confidence': 'medium',
+        }
+
+    if allowed is not None and plan_paid is not None:
+        estimate = max(0.0, allowed - plan_paid)
+        steps.append(f"Allowed amount minus plan paid: {_format_money(allowed)} - {_format_money(plan_paid)}.")
+        return {
+            'estimated_patient_responsibility': _format_money(estimate),
+            'calculation_steps': steps,
+            'confidence': 'medium',
+        }
+
+    if billed is not None and plan_paid is not None:
+        estimate = max(0.0, billed - plan_paid)
+        steps.append(f"Billed amount minus plan paid: {_format_money(billed)} - {_format_money(plan_paid)}.")
+        steps.append("This is less reliable because patient responsibility is usually based on allowed amount, not billed charge.")
+        return {
+            'estimated_patient_responsibility': _format_money(estimate),
+            'calculation_steps': steps,
+            'confidence': 'low',
+        }
+
+    return {
+        'estimated_patient_responsibility': None,
+        'calculation_steps': ['Not enough labeled amounts were found to estimate patient responsibility.'],
+        'confidence': 'low',
+    }
+
+
 def extract_structured(file):
     # Resolve path and extract text
     path = None
@@ -462,24 +691,35 @@ def extract_structured(file):
     if not text:
         return json.dumps({'error': 'no text extracted'})
 
-    # If Nemotron model available, ask it to produce structured JSON
-    nemotron_path = _find_gguf_by_keyword('nemotron') or _find_gguf_by_keyword('nemotron-mini')
     schema = {
+        'document_type': None,
         'member_id': None,
         'patient_name': None,
         'provider_name': None,
         'service_date': None,
         'billed_amount': None,
         'allowed_amount': None,
+        'plan_paid': None,
+        'adjustment_or_discount': None,
+        'deductible': None,
+        'copay': None,
+        'coinsurance': None,
+        'noncovered_amount': None,
         'patient_owed': None,
         'CPT_codes': [],
+        'ICD10_codes': [],
+        'warnings': [],
     }
 
-    if Llama is not None and nemotron_path:
-        llm = Llama(model=nemotron_path, n_threads=max(1, os.cpu_count() // 2))
+    extract_model_path = _select_model_for_role("extract") or _select_model_for_role("reason")
+    if Llama is not None and extract_model_path:
+        llm = Llama(model=extract_model_path, n_threads=max(1, os.cpu_count() // 2))
         prompt = (
             "Extract the following fields from the document and return valid JSON only. "
-            "Fields: member_id, patient_name, provider_name, service_date, billed_amount, allowed_amount, patient_owed, CPT_codes (list).\n\n"
+            "Fields: document_type, member_id, patient_name, provider_name, service_date, billed_amount, "
+            "allowed_amount, plan_paid, adjustment_or_discount, deductible, copay, coinsurance, "
+            "noncovered_amount, patient_owed, CPT_codes (list), ICD10_codes (list), warnings (list). "
+            "Use null for missing fields. Preserve dollar amounts as strings.\n\n"
             f"Document text:\n{text[:20000]}\n\nReturn only JSON."
         )
         resp = llm(prompt=prompt, max_tokens=512)
@@ -487,14 +727,47 @@ def extract_structured(file):
         # try to parse JSON from output
         try:
             parsed = json.loads(out)
+            if isinstance(parsed, dict):
+                calc = estimate_patient_responsibility(parsed)
+                parsed.update(calc)
             return json.dumps(parsed, ensure_ascii=False, indent=2)
         except Exception:
             # fallthrough to regex fallback
             pass
 
     # Regex fallback: best-effort extraction
-    import re
     res = dict(schema)
+    lower_text = text.lower()
+    if 'explanation of benefits' in lower_text or 'this is not a bill' in lower_text:
+        res['document_type'] = 'explanation_of_benefits'
+    elif 'claim' in lower_text:
+        res['document_type'] = 'claim'
+    elif 'amount due' in lower_text or 'balance due' in lower_text:
+        res['document_type'] = 'provider_bill'
+
+    res['billed_amount'] = _extract_labeled_amount(text, [
+        r'amount billed', r'billed', r'provider charge', r'total charges?', r'charge'
+    ])
+    res['allowed_amount'] = _extract_labeled_amount(text, [
+        r'allowed amount', r'allowed', r'eligible expense', r'negotiated rate', r'allowable'
+    ])
+    res['plan_paid'] = _extract_labeled_amount(text, [
+        r'plan paid', r'insurance paid', r'paid by plan', r'benefit paid', r'paid'
+    ])
+    res['adjustment_or_discount'] = _extract_labeled_amount(text, [
+        r'adjustment', r'discount', r'network discount', r'provider discount'
+    ])
+    res['deductible'] = _extract_labeled_amount(text, [r'deductible'])
+    res['copay'] = _extract_labeled_amount(text, [r'copay', r'co-pay', r'copayment'])
+    res['coinsurance'] = _extract_labeled_amount(text, [r'coinsurance', r'co-insurance'])
+    res['noncovered_amount'] = _extract_labeled_amount(text, [
+        r'non-covered', r'not covered', r'noncovered'
+    ])
+    res['patient_owed'] = _extract_labeled_amount(text, [
+        r'patient responsibility', r'member responsibility', r'you owe', r'amount due', r'balance due',
+        r'patient owes?', r'total due'
+    ])
+
     # amounts
     amounts = re.findall(r"\$?\s*(\d{1,3}(?:[,\d{3}]*)(?:\.\d{2})?)", text)
     if amounts:
@@ -502,16 +775,18 @@ def extract_structured(file):
         def clean(a):
             return a.replace(',', '')
         cleaned = [clean(a) for a in amounts]
-        if len(cleaned) >= 1:
+        if len(cleaned) >= 1 and not res['billed_amount']:
             res['billed_amount'] = cleaned[0]
-        if len(cleaned) >= 2:
+        if len(cleaned) >= 2 and not res['allowed_amount']:
             res['allowed_amount'] = cleaned[1]
-        if len(cleaned) >= 3:
+        if len(cleaned) >= 3 and not res['patient_owed']:
             res['patient_owed'] = cleaned[2]
 
     # CPT codes: 5-digit numbers
     cpts = re.findall(r"\b(\d{5})\b", text)
     res['CPT_codes'] = list(dict.fromkeys(cpts))
+    icds = re.findall(r"\b([A-Z][0-9][0-9AB](?:\.[A-Z0-9]{1,4})?)\b", text)
+    res['ICD10_codes'] = list(dict.fromkeys(icds))
 
     # member id heuristic
     mem = re.search(r"Member(?: ID| #|:)?\s*([A-Z0-9\-]{5,})", text, re.I)
@@ -523,31 +798,33 @@ def extract_structured(file):
     if dt:
         res['service_date'] = dt.group(1)
 
+    res.update(estimate_patient_responsibility(res))
+    if not res.get('allowed_amount'):
+        res['warnings'].append('Allowed amount was not found; patient responsibility may be harder to verify.')
+    if res.get('document_type') == 'provider_bill':
+        res['warnings'].append('Compare this provider bill with the insurer EOB before assuming the amount is final.')
+
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 with gr.Blocks() as demo:
-    gr.Markdown("# InsureChat — Local RAG for US medical insurance (UHC)")
+    gr.Markdown("# InsureChat - local medical insurance helper")
     with gr.Row():
         with gr.Column(scale=2):
             chat = gr.Chatbot()
-            inp = gr.Textbox(placeholder='Ask a question about your bill or coverage')
+            lang_dropdown = gr.Dropdown(choices=[
+                ("English","en"),("Spanish","es"),("French","fr"),("Hindi","hi"),
+                ("Chinese","zh"),("Arabic","ar"),("Portuguese","pt"),("German","de"),
+                ("Japanese","ja"),("Korean","ko"),("Russian","ru"),("Vietnamese","vi")
+            ], value='en', label='Answer language')
+            inp = gr.Textbox(placeholder='Ask about copay, deductible, an EOB, a claim, or an uploaded bill')
             submit = gr.Button('Ask')
         with gr.Column(scale=1):
             file_input = gr.File(label='Upload PDF/JPG/PNG/TXT')
             ingest_btn = gr.Button('Ingest file')
             status = gr.Textbox(label='Status')
 
-            extract_btn = gr.Button('Extract Bill (JSON)')
-            extract_output = gr.Textbox(label='Structured JSON', lines=10)
-
-            lang_dropdown = gr.Dropdown(choices=[
-                ("English","en"),("Spanish","es"),("French","fr"),("Hindi","hi"),
-                ("Chinese","zh"),("Arabic","ar"),("Portuguese","pt"),("German","de"),
-                ("Japanese","ja"),("Korean","ko"),("Russian","ru"),("Vietnamese","vi")
-            ], value='en', label='Language')
-            translate_input = gr.Textbox(label='Text to translate')
-            translate_btn = gr.Button('Translate')
-            translate_output = gr.Textbox(label='Translation', lines=4)
+            extract_btn = gr.Button('Extract Bill / Claim (JSON)')
+            extract_output = gr.Textbox(label='Structured insurance fields and estimate', lines=14)
 
     ingest_btn.click(ingest_file, inputs=file_input, outputs=status)
     extract_btn.click(extract_structured, inputs=file_input, outputs=extract_output)
@@ -602,7 +879,6 @@ with gr.Blocks() as demo:
         return normalized
 
     submit.click(chat_submit, inputs=[inp, lang_dropdown, chat], outputs=chat)
-    translate_btn.click(lambda txt, lg: translate_text(txt, lg), inputs=[translate_input, lang_dropdown], outputs=translate_output)
 
 if __name__ == '__main__':
     demo.launch()
