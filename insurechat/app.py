@@ -97,6 +97,7 @@ LANGUAGE_NAMES = {
 ONLINE_GLOSSARY_URL = "https://www.healthcare.gov/glossary/"
 
 INSURANCE_TERM_ALIASES = {
+    'health insurance': ['health insurance', 'medical insurance', 'insurance'],
     'copay': ['copay', 'copayment', 'co-pay'],
     'deductible': ['deductible'],
     'coinsurance': ['coinsurance', 'co-insurance'],
@@ -505,6 +506,19 @@ def _is_definition_question(question):
     return len(text.split()) == 1 and len(text) < 30
 
 
+def _definition_term(question):
+    text = re.sub(r"[^a-z0-9\s-]", "", (question or '').strip().lower())
+    text = re.sub(r"^(?:what is|whats|define|definition of|meaning of)\s+", "", text)
+    return text.strip()
+
+
+def _definition_suggestions(question, limit=3):
+    requested = _definition_term(question)
+    if not requested:
+        return []
+    return get_close_matches(requested, list(INSURANCE_TERM_ALIASES), n=limit, cutoff=0.5)
+
+
 def _answer_from_active_bill(question, parsed):
     if not isinstance(parsed, dict) or not parsed or parsed.get('error'):
         return None
@@ -565,8 +579,11 @@ def _answer_from_active_bill(question, parsed):
         details.append(f"Patient responsibility: {_format_money(_money_to_float(owed)) or owed}")
     if service_date:
         details.append(f"Service date: {service_date}")
-    answer = "Uploaded bill summary:\n" + "\n".join(f"- {item}" for item in details)
     warnings = parsed.get('warnings') or []
+    if not details and not warnings:
+        return None
+
+    answer = "Uploaded bill summary:\n" + "\n".join(f"- {item}" for item in details)
     if warnings:
         answer += "\n\nImportant:\n" + "\n".join(f"- {warning}" for warning in warnings)
     return answer
@@ -661,6 +678,20 @@ def _simple_context_answer(question, chunks):
     return answer
 
 
+def _clean_model_answer(answer):
+    """Remove common local-model boilerplate and repeated closing text."""
+    text = (answer or '').strip()
+    text = re.sub(r"^Answer:\s*", "", text, flags=re.I)
+    stop_patterns = (
+        r"\n\s*Please provide (?:your )?feedback.*",
+        r"\n\s*Best regards,.*",
+        r"\n\s*Note:.*",
+    )
+    for pattern in stop_patterns:
+        text = re.sub(pattern, "", text, flags=re.I | re.S).strip()
+    return text
+
+
 def ask_question(q, lang='en', active_document=None):
     # Retrieve
     # short-circuit greetings to avoid dumping documents for 'hi' etc.
@@ -725,16 +756,30 @@ def ask_question(q, lang='en', active_document=None):
 
     context = "\n\n---\n\n".join(context_parts)
 
-    if not context and is_definition:
+    if is_definition and not active_chunks:
+        if kb_hits:
+            answer = _simple_context_answer(corrected_q, kb_hits)
+            return finish(f"{answer}\n\nLearn more: {ONLINE_GLOSSARY_URL}")
+
+        suggestions = _definition_suggestions(corrected_q)
+        suggestion_text = ""
+        if suggestions:
+            suggestion_text = " Did you mean " + ", ".join(f"'{term}'" for term in suggestions) + "?"
         return finish(
-            "I could not find that definition in the local knowledge base. "
-            "I have this trusted glossary reference that may contain what you need: "
-            f"{ONLINE_GLOSSARY_URL}"
+            f"I could not find a local definition for '{_definition_term(corrected_q)}'."
+            f"{suggestion_text}\n\nTrusted glossary: {ONLINE_GLOSSARY_URL}"
         )
 
+    # General questions without an active upload stay on fast local RAG.
+    # Llama is reserved for reasoning over the current PDF, image, or text file.
+    if not active_chunks:
+        return finish(_simple_context_answer(corrected_q, chunks))
+
     prompt_suffix = (
-        "Answer concisely. Use plain language for a non-U.S. user. "
-        "If amounts are involved, show the calculation steps and assumptions. Include Source when available."
+        "Answer in no more than three short paragraphs using plain language. "
+        "Only show calculations when the user asks about an amount or calculation. Include Source when available. "
+        "Do not add an 'Answer' heading, notes about editing the response, feedback requests, signatures, "
+        "contact information, or repeated closing text."
     )
     prompt = (
         f"{SYSTEM_PROMPT}\n\nDOCUMENT CONTEXT:\n{context}\n\n"
@@ -750,11 +795,16 @@ def ask_question(q, lang='en', active_document=None):
 
     # Keep prompts compact by limiting context length.
     with _use_llm(llm_path) as llm:
-        resp = llm(prompt=prompt, max_tokens=512)
+        resp = llm(
+            prompt=prompt,
+            max_tokens=256,
+            temperature=0.1,
+            stop=["\nNote:", "\nPlease provide", "\nBest regards,"],
+        )
     text = resp.get('choices', [{}])[0].get('text') or resp.get('text') or ''
     # If multilingual output requested and translator model available, translate back to requested language
     # Always return English text from this function; translation is handled by the caller.
-    return text
+    return _clean_model_answer(text)
 
 
 def _find_gguf_by_keyword(keyword):

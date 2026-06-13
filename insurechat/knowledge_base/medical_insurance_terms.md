@@ -16,6 +16,7 @@ Insurance does not always pay the full bill. It usually follows plan rules: dedu
 
 | Term | Plain-language meaning | What to look for on bills, EOBs, or claims | Example |
 |---|---|---|---|
+| Health insurance | A plan or contract that helps pay for covered medical care in exchange for a premium. The member may still pay deductibles, copays, coinsurance, or non-covered costs. | Plan name, coverage dates, network, premium, deductible, copay, and coinsurance. | A health plan may pay part of an in-network doctor visit after the member pays the required cost sharing. |
 | Premium | The regular amount paid to keep insurance active, usually monthly. | Usually not on a medical bill; appears in plan or account billing. | You pay a monthly premium even if you do not visit a doctor. |
 | Deductible | The amount you pay for covered services before the plan starts paying many costs. | "Deductible", "applied to deductible", "deductible remaining". | If the deductible is $2,000, you may pay covered costs until $2,000 is reached. |
 | Copayment / copay | A fixed dollar amount for a covered service. | "Copay", "office visit copay", "ER copay", "Rx copay". | A primary-care visit might have a $25 copay. |

@@ -58,6 +58,14 @@ The app uses Gradio for the interface and a local retrieval-augmented generation
 - Keeps only one GGUF model loaded at a time to reduce peak RAM and VRAM use.
 - Continues with deterministic RAG and regex fallbacks when optional GGUF models are missing.
 
+### Answer Routing
+
+- Definitions and general insurance questions use the fast local glossary/RAG path without loading Llama.
+- Misspelled or unknown terms receive a correction or close-term suggestion plus a trusted glossary link.
+- Direct uploaded-bill fields such as discount, amount due, service date, and plan payment use deterministic parsed values.
+- Llama is reserved for structured extraction and questions that require reasoning over the active PDF, image, or text upload.
+- Aya is loaded only when a non-English answer must be translated.
+
 ## Requirements
 
 - Python 3.10 or newer
