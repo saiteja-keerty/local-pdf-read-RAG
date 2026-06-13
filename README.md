@@ -152,6 +152,18 @@ Without the models, the application still starts:
 - Translation is unavailable without Aya.
 - LLM reasoning/extraction is unavailable without Nemotron or Llama.
 
+## Model Verification
+
+The recommended Aya and Llama configuration was tested locally with the downloaded Q4 GGUF files:
+
+- Llama 3.1 8B generated a grounded explanation comparing deductible, copay, and coinsurance.
+- Llama 3.1 8B completed the structured document-extraction path and returned valid JSON fields.
+- Aya Expanse 8B translated an English insurance explanation into Spanish.
+- Switching from Llama to Aya closed the previous model before loading the next model.
+- Explicit cleanup released the active model after inference.
+
+The complete reasoning, extraction, translation, and cleanup test took about six minutes on the tested integrated AMD Vulkan graphics system. This is a hardware-specific measurement, not an expected time for every computer.
+
 ## Run
 
 From the repository root:
