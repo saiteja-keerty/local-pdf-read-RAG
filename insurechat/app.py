@@ -10,6 +10,8 @@ python app.py
 import os
 import json
 import threading
+import gc
+from contextlib import contextmanager
 from pathlib import Path
 import re
 import io
@@ -109,8 +111,9 @@ INSURANCE_TERM_ALIASES = {
     'balance billing': ['balance billing', 'balance bill'],
 }
 
-_LLM_CACHE = {}
-_LLM_CACHE_LOCK = threading.Lock()
+_ACTIVE_LLM = None
+_ACTIVE_LLM_PATH = None
+_LLM_LOCK = threading.RLock()
 
 # RAG index: uses FAISS + sentence-transformers when available, otherwise TF-IDF fallback
 class RAGIndex:
@@ -745,10 +748,9 @@ def ask_question(q, lang='en', active_document=None):
     if not llm_path:
         return finish(_simple_context_answer(corrected_q, chunks))
 
-    llm = _get_llm(llm_path)
-
-    # Keep prompts compact by limiting context length
-    resp = llm(prompt=prompt, max_tokens=512)
+    # Keep prompts compact by limiting context length.
+    with _use_llm(llm_path) as llm:
+        resp = llm(prompt=prompt, max_tokens=512)
     text = resp.get('choices', [{}])[0].get('text') or resp.get('text') or ''
     # If multilingual output requested and translator model available, translate back to requested language
     # Always return English text from this function; translation is handled by the caller.
@@ -778,20 +780,38 @@ def _select_model_for_role(role):
     return None
 
 
-def _get_llm(model_path):
-    """Load each local GGUF once and reuse it for later requests."""
+def _unload_active_llm():
+    """Release the active GGUF before another role loads a different model."""
+    global _ACTIVE_LLM, _ACTIVE_LLM_PATH
+    if _ACTIVE_LLM is not None:
+        close = getattr(_ACTIVE_LLM, 'close', None)
+        if callable(close):
+            close()
+    _ACTIVE_LLM = None
+    _ACTIVE_LLM_PATH = None
+    gc.collect()
+
+
+@contextmanager
+def _use_llm(model_path):
+    """Keep one local GGUF loaded and prevent it being closed during inference."""
+    global _ACTIVE_LLM, _ACTIVE_LLM_PATH
     if Llama is None or not model_path:
-        return None
-    with _LLM_CACHE_LOCK:
-        if model_path not in _LLM_CACHE:
-            _LLM_CACHE[model_path] = Llama(
+        yield None
+        return
+
+    with _LLM_LOCK:
+        if _ACTIVE_LLM_PATH != model_path:
+            _unload_active_llm()
+            _ACTIVE_LLM = Llama(
                 model_path=model_path,
-                n_ctx=1024,
+                n_ctx=4096,
                 n_threads=max(1, os.cpu_count() // 2),
                 n_gpu_layers=-1,
                 verbose=False,
             )
-        return _LLM_CACHE[model_path]
+            _ACTIVE_LLM_PATH = model_path
+        yield _ACTIVE_LLM
 
 
 def translate_text(text, target_lang='en', source_lang='English'):
@@ -805,25 +825,25 @@ def translate_text(text, target_lang='en', source_lang='English'):
         if aya_path:
             source_name = LANGUAGE_NAMES.get((source_lang or '').lower(), source_lang or 'the source language')
             target_name = LANGUAGE_NAMES.get(target_code, target_lang)
-            llm = _get_llm(aya_path)
-            resp = llm.create_chat_completion(
-                messages=[
-                    {
-                        'role': 'system',
-                        'content': (
-                            f"Translate from {source_name} to {target_name}. Return only the translation, "
-                            "without notes, labels, or the original text."
-                        ),
-                    },
-                    {'role': 'user', 'content': text},
-                ],
-                max_tokens=min(384, max(96, len(text) * 2)),
-                temperature=0.1,
-            )
+            with _use_llm(aya_path) as llm:
+                resp = llm.create_chat_completion(
+                    messages=[
+                        {
+                            'role': 'system',
+                            'content': (
+                                f"Translate from {source_name} to {target_name}. Return only the translation, "
+                                "without notes, labels, or the original text."
+                            ),
+                        },
+                        {'role': 'user', 'content': text},
+                    ],
+                    max_tokens=min(384, max(96, len(text) * 2)),
+                    temperature=0.1,
+                )
             translated = resp.get('choices', [{}])[0].get('message', {}).get('content', '')
             return translated.strip() or text
 
-    return finish(text)
+    return text
 
 
 def _money_to_float(value):
@@ -955,26 +975,25 @@ def extract_structured(file):
 
     extract_model_path = _select_model_for_role("extract") or _select_model_for_role("reason")
     if Llama is not None and extract_model_path:
-        llm = _get_llm(extract_model_path)
         prompt = (
             "Extract the following fields from the document and return valid JSON only. "
             "Fields: document_type, member_id, patient_name, provider_name, service_date, billed_amount, "
             "allowed_amount, plan_paid, adjustment_or_discount, deductible, copay, coinsurance, "
             "noncovered_amount, patient_owed, CPT_codes (list), ICD10_codes (list), warnings (list). "
             "Use null for missing fields. Preserve dollar amounts as strings.\n\n"
-            f"Document text:\n{text[:20000]}\n\nReturn only JSON."
+            f"Document text:\n{text[:10000]}\n\nReturn only JSON."
         )
-        resp = llm(prompt=prompt, max_tokens=512)
-        out = resp.get('choices',[{}])[0].get('text') or resp.get('text') or ''
-        # try to parse JSON from output
         try:
+            with _use_llm(extract_model_path) as llm:
+                resp = llm(prompt=prompt, max_tokens=512)
+            out = resp.get('choices',[{}])[0].get('text') or resp.get('text') or ''
             parsed = json.loads(out)
             if isinstance(parsed, dict):
                 calc = estimate_patient_responsibility(parsed)
                 parsed.update(calc)
             return json.dumps(parsed, ensure_ascii=False, indent=2)
         except Exception:
-            # fallthrough to regex fallback
+            # Fall through to deterministic extraction if inference or JSON parsing fails.
             pass
 
     # Regex fallback: best-effort extraction
