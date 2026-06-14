@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import io
 from difflib import get_close_matches
+from . import sbc_utils
 
 # LLM + embeddings + vectorstore imports are optional until models are present
 try:
@@ -787,6 +788,26 @@ def ask_question(q, input_lang='en', active_document=None):
             context_parts.append(excerpt)
 
     context = "\n\n---\n\n".join(context_parts)
+
+    # Quick numeric Q&A using SBC parsing utilities when an uploaded plan/SBC is active
+    if active_chunks:
+        try:
+            full_text = "\n\n".join(active_chunks)
+            plan = sbc_utils.parse_plan_terms(full_text)
+            # If user asks for a deductible
+            if re.search(r"\bwhat is the overall deductible\b|\boverall deductible\b|\bdeductible\b", corrected_q, re.I):
+                d = plan.get('overall_deductible_network_individual')
+                if d is not None:
+                    return finish(f"The plan's in-network individual deductible appears to be {_format_money(d)}.")
+            # If user asks a dollar-based 'how much would I pay' question
+            m = re.search(r"\$(\s?[0-9,]+)", corrected_q)
+            if m:
+                amt = float(re.sub(r"[^0-9.]", "", m.group(0)))
+                service_type = 'hospital' if re.search(r"hospital|facility|inpatient|delivery", corrected_q, re.I) else 'service'
+                est = sbc_utils.estimate_member_payment(amt, service_type, 'network', plan)
+                return finish(est)
+        except Exception:
+            pass
 
     if is_definition and not active_chunks:
         if kb_hits:

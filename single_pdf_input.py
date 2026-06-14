@@ -15,6 +15,7 @@ except Exception as _err:
     print("Falling back to lightweight PDF loader/retriever due to import error:", _err)
     # Lightweight PDF loader using pypdf
     from pypdf import PdfReader
+    import re
 
     class _SimpleDoc:
         def __init__(self, text, page_index=0):
@@ -100,9 +101,12 @@ except Exception as _err:
 vectorstore = None
 retriever = None
 llm = None
+latest_text = None
+plan_terms = {}
 
 def process_pdf(file):
     global vectorstore, retriever, llm
+    global latest_text, plan_terms
 
     import traceback
 
@@ -125,6 +129,9 @@ def process_pdf(file):
         loader = PyPDFLoader(path)
         documents = loader.load()
         print(" Loaded pages:", len(documents))
+
+        # concatenate raw text for parsing
+        latest_text = "\n\n".join([d.page_content for d in documents])
 
         # Split text
         splitter = RecursiveCharacterTextSplitter(
@@ -156,6 +163,13 @@ def process_pdf(file):
         llm = Ollama(model="llama3")
         print(" Ollama LLM ready!")
 
+        # parse plan terms for numeric Q&A
+        try:
+            plan_terms = parse_plan_terms(latest_text)
+            print('Parsed plan terms:', plan_terms)
+        except Exception:
+            plan_terms = {}
+
         return "PDF processed successfully! You can now ask questions."
     except Exception as e:
         tb = traceback.format_exc()
@@ -165,6 +179,7 @@ def process_pdf(file):
 
 def chat_with_pdf(question):
     global retriever, llm
+    global latest_text, plan_terms
     import traceback
     try:
         if retriever is None:
@@ -191,6 +206,16 @@ Answer:
 """
 
         print(" Sending to LLM...")
+        # detect direct numeric cost questions and answer using parsed plan terms
+        m = re.search(r"\$(\s?[0-9,]+)", question)
+        if m and plan_terms:
+            # get numeric value
+            amt = float(re.sub(r"[^0-9.]", "", m.group(0)))
+            # basic detection for hospital
+            if re.search(r"hospital|facility|inpatient|delivery", question, re.I):
+                est = estimate_member_payment(amt, service_type='hospital', network='network', plan=plan_terms)
+                return est
+
         response = llm.invoke(prompt)
         print(" Response generated.")
         return response
@@ -214,4 +239,99 @@ with gr.Blocks() as demo:
     process_button.click(process_pdf, inputs=file_input, outputs=status_output)
     question_input.submit(chat_with_pdf, inputs=question_input, outputs=answer_output)
 
-demo.launch()
+if __name__ == '__main__':
+    demo.launch()
+
+def parse_plan_terms(text: str) -> dict:
+    """Extract common plan numeric terms from SBC text.
+
+    Returns keys: overall_deductible_network_individual, out_of_pocket_limit_network_individual,
+    specialist_copay, pcp_copay, urgent_copay, hospital_coinsurance, other_coinsurance
+    """
+    import re
+    terms = {}
+    # overall deductible (network) individual
+    m = re.search(r"For network providers\s*\$\s?([0-9,]+)\s*individual", text, re.I)
+    if m:
+        terms['overall_deductible_network_individual'] = float(m.group(1).replace(',', ''))
+    else:
+        # fallback: first occurrence of 'deductible' followed by $xxx
+        m2 = re.search(r"deductible[^\$]{0,40}\$\s?([0-9,]+)", text, re.I)
+        if m2:
+            terms['overall_deductible_network_individual'] = float(m2.group(1).replace(',', ''))
+
+    # out-of-pocket limit network individual
+    m = re.search(r"out-of-pocket limit[\s\S]{0,80}For network providers\s*\$\s?([0-9,]+)\s*individual", text, re.I)
+    if m:
+        terms['out_of_pocket_limit_network_individual'] = float(m.group(1).replace(',', ''))
+    else:
+        m2 = re.search(r"out-of-pocket limit[\s\S]{0,80}\$\s?([0-9,]+)\s*individual", text, re.I)
+        if m2:
+            terms['out_of_pocket_limit_network_individual'] = float(m2.group(1).replace(',', ''))
+    # alternative pattern: "For network providers $8,000 individual / $16,000 family"
+    m_alt = re.search(r"For network providers\s*\$\s?([0-9,]+)\s*individual\s*/\s*\$\s?([0-9,]+)\s*family", text, re.I)
+    if m_alt:
+        terms['out_of_pocket_limit_network_individual'] = float(m_alt.group(1).replace(',', ''))
+
+    # copays
+    m = re.search(r"Primary care visit[\s\S]{0,80}\$\s?([0-9,]+)", text, re.I)
+    if m:
+        terms['pcp_copay'] = float(m.group(1).replace(',', ''))
+    m = re.search(r"Specialist\s*Visit[\s\S]{0,80}\$\s?([0-9,]+)", text, re.I)
+    if m:
+        terms['specialist_copay'] = float(m.group(1).replace(',', ''))
+    m = re.search(r"Urgent care[\s\S]{0,80}\$\s?([0-9,]+)", text, re.I)
+    if m:
+        terms['urgent_copay'] = float(m.group(1).replace(',', ''))
+
+    # coinsurance percentages (hospital/other)
+    # find all percent coinsurance occurrences and choose the one nearest 'hospital' or 'facility'
+    for mm in re.finditer(r"([0-9]{1,3})%\s*(?:\n|\s)*Coinsurance", text, re.I):
+        pct = float(mm.group(1)) / 100.0
+        head = text[max(0, mm.start()-80):mm.start()].lower()
+        if any(k in head for k in ('hospital', 'facility', 'hospital (facility)', 'facility fee')):
+            terms['hospital_coinsurance'] = pct
+            break
+    # if not found, try generic 'Other' context
+    if 'hospital_coinsurance' not in terms:
+        for mm in re.finditer(r"([0-9]{1,3})%\s*(?:\n|\s)*Coinsurance", text, re.I):
+            pct = float(mm.group(1)) / 100.0
+            head = text[max(0, mm.start()-80):mm.start()].lower()
+            if 'other' in head:
+                terms['other_coinsurance'] = pct
+                break
+
+    # fallback coinsurance general
+    if 'hospital_coinsurance' not in terms:
+        m = re.search(r"([0-9]{1,3})%\s*Coinsurance", text, re.I)
+        if m:
+            terms['other_coinsurance'] = float(m.group(1)) / 100.0
+
+    return terms
+
+def estimate_member_payment(bill_amount: float, service_type: str, network: str, plan: dict) -> str:
+    """Estimate member payment for a single service given plan terms. Simplified rules:
+    - Member pays deductible first up to overall deductible
+    - After deductible, coinsurance applies to remaining amount
+    - Copays are ignored for facility inpatient calculations
+    - Cap at out-of-pocket limit if available
+    """
+    ded = plan.get('overall_deductible_network_individual', 0.0)
+    oop = plan.get('out_of_pocket_limit_network_individual', None)
+    if service_type == 'hospital':
+        coin = plan.get('hospital_coinsurance', plan.get('other_coinsurance', 0.0))
+    else:
+        coin = plan.get('other_coinsurance', 0.0)
+
+    remaining = max(0.0, bill_amount - ded)
+    member_after_ded = coin * remaining
+    member_total = min(ded, bill_amount) + member_after_ded
+
+    if oop is not None:
+        # cap at out-of-pocket
+        member_total_capped = min(member_total, oop)
+    else:
+        member_total_capped = member_total
+
+    return f"Estimate for ${bill_amount:,.0f} {('in-network' if network=='network' else '')} {service_type} bill: member pays ${member_total_capped:,.2f} (raw calc ${member_total:,.2f})"
+
