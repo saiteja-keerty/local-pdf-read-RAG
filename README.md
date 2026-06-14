@@ -65,6 +65,8 @@ The app uses Gradio for the interface and a local retrieval-augmented generation
 - Direct uploaded-bill fields such as discount, amount due, service date, and plan payment use deterministic parsed values.
 - Llama is reserved for structured extraction and questions that require reasoning over the active PDF, image, or text upload.
 - Aya is loaded only when a non-English answer must be translated.
+- Question language and answer language are selected independently in the interface.
+- Hindi questions may be entered in Devanagari or as Romanized Hindi by selecting the matching question-language option.
 
 ## Requirements
 

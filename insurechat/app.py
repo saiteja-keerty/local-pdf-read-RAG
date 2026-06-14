@@ -90,6 +90,7 @@ MODEL_ROLE_KEYWORDS = {
 
 LANGUAGE_NAMES = {
     'en': 'English', 'es': 'Spanish', 'fr': 'French', 'hi': 'Hindi',
+    'hi-latn': 'Hindi (Romanized)',
     'zh': 'Chinese', 'ar': 'Arabic', 'pt': 'Portuguese', 'de': 'German',
     'ja': 'Japanese', 'ko': 'Korean', 'ru': 'Russian', 'vi': 'Vietnamese',
 }
@@ -692,13 +693,51 @@ def _clean_model_answer(answer):
     return text
 
 
-def ask_question(q, lang='en', active_document=None):
+def _normalize_romanized_hindi(question):
+    """Normalize common Romanized Hindi insurance questions before translation."""
+    text = (question or '').strip().lower()
+    term_aliases = {
+        'cope': 'copay', 'copay': 'copay', 'deductible': 'deductible',
+        'coinsurance': 'coinsurance', 'premium': 'premium',
+        'insurance': 'health insurance', 'insurence': 'health insurance',
+    }
+    match = re.fullmatch(r"(.+?)\s+(?:kya|kyaa)\s+(?:hai|h)\??", text)
+    if match:
+        term = term_aliases.get(match.group(1).strip(), match.group(1).strip())
+        return f"what is {term}?"
+    return question
+
+
+def _normalize_input_question(question, input_lang):
+    if input_lang == 'hi-latn':
+        return _normalize_romanized_hindi(question)
+    if input_lang == 'hi':
+        normalized = (question or '').strip().lower().rstrip('?!। ')
+        hindi_definitions = {
+            'कोपे क्या है': 'what is copay?',
+            'कॉपी क्या है': 'what is copay?',
+            'स्वास्थ्य बीमा क्या है': 'what is health insurance?',
+            'बीमा क्या है': 'what is health insurance?',
+        }
+        return hindi_definitions.get(normalized, question)
+    return question
+
+
+def ask_question(q, input_lang='en', active_document=None):
     # Retrieve
     # short-circuit greetings to avoid dumping documents for 'hi' etc.
     greetings = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
     if isinstance(q, str) and q.strip().lower() in greetings:
         return "Hi — I can help with your bill or insurance questions. Ask me about a term (e.g. 'what is a copay') or upload a bill."
-    corrected_q, corrections = _correct_insurance_terms(q)
+    source_question = _normalize_input_question(q, input_lang)
+    english_q = source_question
+    try:
+        if input_lang and input_lang.lower() != 'en' and source_question == q:
+            english_q = translate_text(source_question, target_lang='en', source_lang=input_lang)
+    except Exception:
+        english_q = source_question
+
+    corrected_q, corrections = _correct_insurance_terms(english_q)
 
     def finish(answer):
         if corrections:
@@ -710,17 +749,10 @@ def ask_question(q, lang='en', active_document=None):
     if bill_answer:
         return finish(bill_answer)
 
-    # Try the local glossary before translating. This handles an English
-    # question with a non-English answer language without an unnecessary model call.
+    # Try the local glossary after normalizing the question into English.
     preliminary_kb_hits = _search_kb_for_terms(corrected_q)
 
-    # Translate the question locally with Aya for English-language retrieval.
     q_for_search = corrected_q
-    try:
-        if lang and lang.lower() != 'en' and not preliminary_kb_hits:
-            q_for_search = translate_text(corrected_q, target_lang='en', source_lang=lang)
-    except Exception:
-        q_for_search = corrected_q
 
     active_chunks = active_document.get('_document_chunks', []) if isinstance(active_document, dict) else []
     chunks = list(active_chunks[:6]) if active_chunks else index.query(
@@ -1134,7 +1166,13 @@ with gr.Blocks() as demo:
     with gr.Row():
         with gr.Column(scale=2):
             chat = gr.Chatbot()
-            lang_dropdown = gr.Dropdown(choices=[
+            input_lang_dropdown = gr.Dropdown(choices=[
+                ("English","en"),("Spanish","es"),("French","fr"),("Hindi","hi"),
+                ("Hindi (Romanized)","hi-latn"),("Chinese","zh"),("Arabic","ar"),
+                ("Portuguese","pt"),("German","de"),("Japanese","ja"),("Korean","ko"),
+                ("Russian","ru"),("Vietnamese","vi")
+            ], value='en', label='Question language')
+            answer_lang_dropdown = gr.Dropdown(choices=[
                 ("English","en"),("Spanish","es"),("French","fr"),("Hindi","hi"),
                 ("Chinese","zh"),("Arabic","ar"),("Portuguese","pt"),("German","de"),
                 ("Japanese","ja"),("Korean","ko"),("Russian","ru"),("Vietnamese","vi")
@@ -1160,8 +1198,8 @@ with gr.Blocks() as demo:
         outputs=[extract_output, active_document, status],
     )
 
-    # Chat handler: accepts question and language, returns updated chat history
-    def chat_submit(question, lang, active_bill=None, chat_history=None):
+    # Chat handler: accepts separate question and answer languages.
+    def chat_submit(question, input_lang, answer_lang, active_bill=None, chat_history=None):
         if chat_history is None:
             chat_history = []
         # Normalize chat_history into list of {'role':..., 'content':...}
@@ -1193,17 +1231,17 @@ with gr.Blocks() as demo:
         normalized.append({'role': 'user', 'content': question})
 
         # Produce an English grounded answer, then translate it exactly once.
-        ans = ask_question(question, lang=lang, active_document=active_bill)
+        ans = ask_question(question, input_lang=input_lang, active_document=active_bill)
 
         # Return only the selected language instead of English plus a translation.
         try:
-            if lang and lang.lower() != 'en':
-                translated = translate_text(ans, target_lang=lang, source_lang='en')
+            if answer_lang and answer_lang.lower() != 'en':
+                translated = translate_text(ans, target_lang=answer_lang, source_lang='en')
                 if translated and translated.strip() and translated.strip() != ans.strip():
                     ans = translated.strip()
                 else:
                     ans = (
-                        f"Translation to {LANGUAGE_NAMES.get(lang, lang)} is unavailable because the local "
+                        f"Translation to {LANGUAGE_NAMES.get(answer_lang, answer_lang)} is unavailable because the local "
                         "Aya translation model is not installed.\n\n" + ans
                     )
         except Exception:
@@ -1212,7 +1250,11 @@ with gr.Blocks() as demo:
         normalized.append({'role': 'assistant', 'content': ans})
         return normalized
 
-    submit.click(chat_submit, inputs=[inp, lang_dropdown, active_document, chat], outputs=chat)
+    submit.click(
+        chat_submit,
+        inputs=[inp, input_lang_dropdown, answer_lang_dropdown, active_document, chat],
+        outputs=chat,
+    )
 
 if __name__ == '__main__':
     demo.launch()
