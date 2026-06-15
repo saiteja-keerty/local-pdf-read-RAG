@@ -4,7 +4,7 @@ emoji: "\U0001F6E1\uFE0F"
 colorFrom: blue
 colorTo: green
 sdk: gradio
-app_file: insurechat/app.py
+app_file: run_insurechat.py
 pinned: false
 tags:
   - healthcare

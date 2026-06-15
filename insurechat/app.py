@@ -16,7 +16,14 @@ from pathlib import Path
 import re
 import io
 from difflib import get_close_matches
-from . import sbc_utils
+try:
+    from . import sbc_utils
+except Exception:
+    # When the module is executed as a script (e.g. `python insurechat/app.py`) the
+    # package-relative import can fail with "attempted relative import with no
+    # known parent package". Fall back to an absolute import so the module can
+    # be run both as a package and as a script (useful for Hugging Face Spaces).
+    import sbc_utils
 
 # LLM + embeddings + vectorstore imports are optional until models are present
 try:
