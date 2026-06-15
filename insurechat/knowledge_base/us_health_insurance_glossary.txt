@@ -1,0 +1,395 @@
+US HEALTH INSURANCE — COMPLETE GLOSSARY OF TERMS
+Compiled for InsureChat RAG Knowledge Base | 94+ Terms | UnitedHealthcare Focus
+Sources: healthcare.gov, CMS.gov, KFF.org, IRS.gov, HHS.gov
+For general information only — not legal, medical, or financial advice.
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION A — BASIC COST TERMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ALLOWED AMOUNT
+The maximum dollar amount your insurance plan will pay for a covered service. Also called the "eligible expense," "payment allowance," or "negotiated rate." Your in-network provider has agreed to accept this as full payment. If an out-of-network provider charges more, you may owe the difference (balance billing).
+Example: Your plan's allowed amount for a specialist visit is $200. The doctor charges $260. You may owe the extra $60 if out-of-network.
+
+ANNUAL LIMIT
+The maximum amount a plan pays for covered benefits in a single plan year. The ACA prohibits annual dollar limits on essential health benefits for most plans.
+
+BALANCE BILLING
+When an out-of-network provider bills you the difference between their charge and your plan's allowed amount. In-network providers agree NOT to balance bill — they accept the allowed amount as payment in full. Out-of-network providers can bill any amount above what your insurance pays.
+Example: Doctor charges $500. Plan allows $300 and pays $240 (80% coinsurance). Out-of-network: you owe $60 coinsurance PLUS $200 balance bill = $260 total.
+
+COINSURANCE
+Your share of covered service costs expressed as a PERCENTAGE, paid AFTER you have met your deductible. The plan pays its percentage, you pay yours. Common splits: 80/20, 70/30, 60/40 (plan/you).
+Example: MRI allowed amount $1,000. Deductible already met. With 80/20 coinsurance: you owe $200, plan pays $800.
+
+COPAYMENT / COPAY
+A FIXED dollar amount you pay for a specific covered service, usually at the time of service. A flat fee regardless of total cost. Copays often apply even before your deductible is met (check your plan).
+Example: $25 copay for primary care visit, $50 for specialist, $10 for generic prescription.
+
+DEDUCTIBLE
+The amount you pay out-of-pocket for covered services BEFORE your insurance plan begins to pay (except services covered before the deductible, like preventive care). Resets every plan year. Family plans often have both individual AND family deductibles.
+Example: $1,500 deductible. You have a $2,000 surgery. You pay $1,500; the plan pays its share of the remaining $500.
+
+OUT-OF-POCKET MAXIMUM (OOP MAX)
+The MOST you will pay for covered services in a plan year. After reaching this limit, your insurance pays 100% of covered services for the rest of the year. Includes deductibles, copays, and coinsurance — but NOT premiums, out-of-network costs beyond allowed amounts, or non-covered services.
+Example: OOP max $6,000. Major illness costs $30,000. You pay until you hit $6,000, then the plan pays 100% the rest of the year.
+
+PREMIUM
+The amount you pay EVERY MONTH to keep your health insurance active, regardless of whether you use any health care. Premiums do NOT count toward your deductible or out-of-pocket maximum.
+Example: Monthly premium $280. Your employer pays $500. Total coverage cost: $780/month.
+
+COST SHARING
+The portion of health care costs YOU pay — includes deductibles, copays, and coinsurance combined. Does not include premiums.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION B — PLAN TYPES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EPO — EXCLUSIVE PROVIDER ORGANIZATION
+A plan where you must use providers within the plan's network (except emergencies). No referrals needed for specialists, but NO out-of-network coverage at all. Combines lower cost of HMO with specialist flexibility of PPO.
+
+HMO — HEALTH MAINTENANCE ORGANIZATION
+A plan restricting coverage to a specific network. You choose a Primary Care Provider (PCP) who coordinates care and refers you to specialists. Generally lower premiums and copays, least flexibility. Out-of-network care is NOT covered except emergencies.
+Example: Need a cardiologist? Your HMO PCP must write a referral first. Without it, the visit is not covered.
+
+HDHP — HIGH DEDUCTIBLE HEALTH PLAN
+A plan with higher deductibles than traditional plans but lower premiums. IRS minimum thresholds: $1,600 individual / $3,200 family (2024). HDHPs are the ONLY plans that allow you to open an HSA.
+Note: With an HDHP, you pay full cost for most services until you hit the deductible. Pair with an HSA to save pre-tax dollars.
+
+INDEMNITY PLAN / FEE-FOR-SERVICE
+A traditional plan allowing you to see any doctor without network restrictions. You pay and submit claims for reimbursement. Most expensive premiums, most flexibility.
+
+POS — POINT OF SERVICE PLAN
+A hybrid of HMO and PPO. You choose a PCP and need referrals (like HMO) but can go out-of-network at higher cost (like PPO). Moderate premiums and flexibility.
+
+PPO — PREFERRED PROVIDER ORGANIZATION
+A plan with a network of preferred providers at discounted rates. You can see ANY provider in or out of network WITHOUT a referral, but pay more out-of-network. Most flexible plan type. Generally higher premiums than HMOs.
+Example: PPO covers in-network specialists at 80% after deductible, out-of-network at 60%.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION C — NETWORKS AND PROVIDERS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IN-NETWORK
+Providers who have a contract with your insurance plan at pre-negotiated (discounted) rates. Using in-network providers costs you less and protects you from balance billing.
+
+OUT-OF-NETWORK
+Providers who have NOT contracted with your insurance plan. Your plan pays less (or nothing), and providers can balance bill you. HMO plans do not cover out-of-network care at all except emergencies.
+
+PRIMARY CARE PROVIDER (PCP)
+Your main doctor — general practitioner, family medicine physician, internist, pediatrician, OB-GYN, or nurse practitioner — who provides routine care and coordinates specialist referrals. HMO and POS plans require you to designate a PCP.
+
+REFERRAL
+A written order from your PCP for you to see a specialist or receive specific services. Required by most HMOs and some POS plans. PPO plans do not require referrals.
+Example: Knee pain. Your HMO PCP must write a referral to an orthopedic surgeon. Without it, the visit is not covered.
+
+SPECIALIST
+A physician with advanced training in a specific area: cardiologist (heart), dermatologist (skin), neurologist (brain/nerves), oncologist (cancer), orthopedist (bones), psychiatrist (mental health), etc. Specialist visits usually have higher copays.
+
+NETWORK ADEQUACY
+The requirement that plans have sufficient in-network providers within reasonable distance and wait times. Regulated by state insurance departments.
+
+PROVIDER DIRECTORY
+A list of all in-network doctors, hospitals, labs, and providers for your plan. Always verify a provider is in-network BEFORE your appointment — directories can be outdated.
+Note: Always call the provider's office to confirm they accept your specific plan, not just your insurer. For UHC: check myuhc.com.
+
+TIERED NETWORK
+Some plans organize in-network providers into tiers (Tier 1/Premium, Tier 2/Preferred, Tier 3/Standard). Tier 1 providers cost you the least. UHC and many large insurers use tiered networks.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION D — CLAIMS AND DOCUMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CLAIM
+A request for payment submitted to your insurer — by you or your provider — after you receive covered health care services. The insurer reviews the claim, applies deductible/copay/coinsurance, and pays its share.
+
+CLEAN CLAIM
+A claim submitted with all required information and no errors. Clean claims are processed faster. Incomplete claims are rejected and must be resubmitted.
+
+COORDINATION OF BENEFITS (COB)
+Rules determining which insurance pays first (primary) and which pays second (secondary) when a person has more than one health plan. Prevents collecting more than 100% of costs.
+Example: You have coverage through your job AND your spouse's job. COB determines which plan is primary and how the two plans split your costs.
+
+CPT CODE
+Current Procedural Terminology code — a standardized 5-digit code assigned to every medical procedure. Used on claims to tell insurers what was performed. Example: 99213 = routine office visit (established patient, moderate complexity).
+
+DENIAL / CLAIM DENIAL
+When your insurer refuses to pay for a service, fully or partially. Common reasons: not covered, no prior authorization, out-of-network, missing information, not medically necessary. You have the right to appeal every denial.
+
+ICD-10 / DIAGNOSIS CODE
+International Classification of Diseases, 10th Revision — standardized codes identifying a patient's medical condition or reason for a visit. Appear on EOBs and medical bills. Example: J06.9 = acute upper respiratory infection.
+
+EOB — EXPLANATION OF BENEFITS
+A statement your insurer sends AFTER you receive care. It is NOT a bill. It shows: (1) what was billed, (2) the allowed amount, (3) what the plan paid, (4) what you owe, (5) why any part was denied. Always compare your EOB to the actual bill from your provider to catch errors.
+Note: If the patient responsibility on your EOB differs from your provider's bill, call both the insurer and provider to resolve before paying.
+
+REMITTANCE ADVICE
+Similar to an EOB but sent to your PROVIDER explaining what the insurer paid on your claim. Providers use this to reconcile their billing records.
+
+REMARK CODE / ADJUSTMENT REASON CODE
+Codes on your EOB explaining why a claim was adjusted, reduced, or denied.
+Common codes: CO-45 = charge exceeds fee schedule. PR-1 = deductible amount. PR-2 = coinsurance. PR-3 = copay. OA-23 = previously paid claim.
+
+SUBROGATION
+The right of your insurer to recover money it paid from a third party responsible for your injury. Example: car accident — your insurer can seek reimbursement from the at-fault driver's liability insurer.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION E — AUTHORIZATIONS AND UTILIZATION MANAGEMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CONCURRENT REVIEW
+Ongoing review by your insurer of a hospitalization to determine if continued coverage is medically necessary. The insurer may approve a hospital stay initially then review each additional day.
+
+MEDICAL NECESSITY
+The standard insurers use to decide whether a treatment or service is appropriate and required based on accepted medical standards. Insurers can deny claims as "not medically necessary." You can appeal this determination.
+
+PRIOR AUTHORIZATION / PRE-AUTHORIZATION (PA)
+Approval you must get from your insurer BEFORE receiving certain services, procedures, or medications for them to be covered. Your doctor usually handles this, but you are responsible for ensuring it was obtained. Failure to get required PA can result in full denial.
+Example: Doctor orders MRI. Plan requires prior auth. Doctor submits request with clinical documentation. Plan approves or denies. If denied, you or your doctor can appeal.
+
+PRE-CERTIFICATION
+Similar to prior authorization — advance approval for non-emergency hospitalizations or surgeries. Without it, your claim may be denied or subject to a penalty.
+
+PRE-DETERMINATION
+Optional advance review (not required) to find out how much your plan will pay for a planned service. Unlike prior auth, pre-determination does not guarantee payment.
+
+STEP THERAPY / FAIL FIRST
+A policy requiring you to try lower-cost medications before your plan covers a more expensive option. Example: must try generic antidepressant before plan covers brand-name. If the first option fails (documented), you proceed to the next.
+
+UTILIZATION MANAGEMENT (UM)
+Techniques insurers use to evaluate appropriateness and efficiency of health care services. Includes prior authorization, concurrent review, retrospective review, step therapy, and quantity limits.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION F — PRESCRIPTION DRUG COVERAGE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DRUG FORMULARY
+Your plan's list of covered prescription drugs organized into cost tiers. Tier 1 (generics) = lowest cost. Tier 2 (preferred brand-name) = medium cost. Tier 3 (non-preferred brand-name) = higher cost. Tier 4 (specialty drugs) = highest cost. Non-formulary drugs may not be covered.
+
+GENERIC DRUG
+A drug with the same active ingredients, dosage, safety, and intended use as a brand-name drug, approved by the FDA as bioequivalent. Almost always much cheaper. Tier 1 on most formularies.
+Example: Lisinopril is the generic for Prinivil/Zestril. Metformin is the generic for Glucophage.
+
+SPECIALTY DRUG
+High-cost medications for complex conditions (cancer, MS, rheumatoid arthritis, hepatitis C). Often require special handling or administration. Usually Tier 4 or 5. May require prior authorization and specialty pharmacy dispensing.
+
+MAIL-ORDER PHARMACY
+A pharmacy delivering 90-day supplies of maintenance medications by mail, often at lower cost than retail. Most plans encourage or require mail-order for long-term prescriptions.
+
+QUANTITY LIMITS
+Restrictions on the number of pills or doses your plan will cover in a given time period. Example: 30-day supply limit on controlled substances. Exceeding limits requires prior authorization.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION G — SPECIAL ACCOUNTS AND PROGRAMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+COBRA
+Consolidated Omnibus Budget Reconciliation Act — lets you continue employer-sponsored health insurance for up to 18 months after losing coverage due to job loss, reduced hours, divorce, or other qualifying events. You pay the FULL premium (employer + employee share) plus 2% admin fee.
+Note: COBRA is good for short gaps. ACA Marketplace with subsidies or Medicaid may be cheaper.
+
+FSA — FLEXIBLE SPENDING ACCOUNT
+Employer-sponsored account funded with PRE-TAX dollars for eligible medical, dental, and vision expenses. Reduces taxable income. Annual limit ~$3,200 (2024 IRS limit). KEY RULE: Use it or lose it — most funds expire at year-end. Covers copays, deductibles, prescriptions, glasses, contacts, and many OTC items.
+
+HRA — HEALTH REIMBURSEMENT ARRANGEMENT
+Employer-FUNDED account (not employee) used to reimburse employees for qualified medical expenses and insurance premiums. Employer decides the contribution. Unused funds may roll over depending on plan design. You cannot take HRA funds if you leave the job.
+
+HSA — HEALTH SAVINGS ACCOUNT
+Triple-tax-advantaged savings account available ONLY with a High Deductible Health Plan (HDHP). Contributions are tax-deductible, growth is tax-free, withdrawals for qualified medical expenses are tax-free. Funds roll over every year indefinitely — yours even if you change jobs. Can be invested. After age 65, withdraw for any reason (taxed like income if not medical).
+Example: Contribute $3,000 to HSA. Save ~$750 in federal taxes (25% bracket). Use $1,200 for medical expenses tax-free. Remaining $1,800 rolls over.
+
+LIMITED PURPOSE FSA
+An FSA only usable for dental and vision expenses (not general medical). Can be used alongside an HSA.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION H — ACA MARKETPLACE AND ENROLLMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ACA — AFFORDABLE CARE ACT
+The 2010 federal law (also called Obamacare) expanding health coverage through: Marketplace exchanges, Medicaid expansion, requirements to cover essential health benefits, prohibition on denying coverage for pre-existing conditions, allowing children on parents' plans until age 26, and premium tax credits.
+
+CATASTROPHIC PLAN
+A low-premium, high-deductible Marketplace plan available only to people under 30 or with a hardship exemption. Covers 3 primary care visits/year before deductible and all ACA preventive services.
+
+ESSENTIAL HEALTH BENEFITS (EHBs)
+Ten categories all ACA-compliant plans must cover:
+1. Ambulatory patient services
+2. Emergency services
+3. Hospitalization
+4. Maternity and newborn care
+5. Mental health and substance use disorder services
+6. Prescription drugs
+7. Rehabilitative services and devices
+8. Laboratory services
+9. Preventive and wellness services
+10. Pediatric services including dental and vision
+
+METAL TIERS (BRONZE / SILVER / GOLD / PLATINUM)
+ACA Marketplace plan categories based on actuarial value (how costs are split):
+- Bronze: plan pays ~60%, you pay ~40%
+- Silver: plan pays ~70%, you pay ~30%
+- Gold: plan pays ~80%, you pay ~20%
+- Platinum: plan pays ~90%, you pay ~10%
+Higher metal = higher premium, lower cost-sharing.
+Note: Cost-sharing reductions (CSRs) are only available on SILVER plans for eligible lower-income individuals.
+
+OPEN ENROLLMENT PERIOD (OEP)
+Annual window to enroll in or change health insurance. ACA Marketplace: November 1 – January 15. Coverage starts January 1 if enrolled by December 15; February 1 if enrolled December 16 – January 15. Employer plans: typically fall, once per year.
+
+PREMIUM TAX CREDIT (PTC)
+ACA subsidy reducing your monthly premium based on household income and size. Available as advance payments to your insurer (APTC) or claimed on your tax return. Income range: 100%-400% of federal poverty level.
+
+QUALIFYING LIFE EVENT (QLE)
+A change allowing you to enroll in or change health insurance outside of open enrollment. Examples: losing job-based coverage, getting married or divorced, having a baby, moving, aging off a parent's plan at 26.
+
+SPECIAL ENROLLMENT PERIOD (SEP)
+A limited time (usually 60 days) after a qualifying life event to enroll in, change, or cancel health insurance outside of open enrollment.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION I — GOVERNMENT PROGRAMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CHIP — CHILDREN'S HEALTH INSURANCE PROGRAM
+Government program providing low-cost health coverage to children in families earning too much for Medicaid but unable to afford private insurance. Jointly funded by federal and state governments.
+
+MEDICAID
+Joint federal and state program providing free or low-cost coverage for people with low income, including families, pregnant women, elderly adults, and people with disabilities. Eligibility and coverage vary by state. ACA expanded eligibility in most states to adults up to 138% of federal poverty level.
+
+MEDICARE
+Federal health insurance primarily for people 65+, plus younger people with certain disabilities and people with End-Stage Renal Disease.
+- Part A: Hospital (inpatient, skilled nursing, hospice, some home health)
+- Part B: Medical/outpatient (doctor visits, preventive care, DME)
+- Part C: Medicare Advantage (private plans covering A+B+usually D)
+- Part D: Prescription drug coverage
+
+MEDICARE ADVANTAGE (PART C)
+Alternative to Original Medicare offered by private insurers approved by Medicare. Must cover everything Parts A and B cover. Often includes Part D, dental, vision, and hearing. May have network restrictions. Over half of Medicare beneficiaries are enrolled.
+
+MEDIGAP / MEDICARE SUPPLEMENT
+Private insurance filling the "gaps" in Original Medicare (Parts A and B) — covering deductibles, coinsurance, and copayments. Standardized plans labeled A through N. Cannot be used with Medicare Advantage.
+
+TRICARE
+Health care program for active duty military personnel, veterans, and their families, administered by the Department of Defense.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION J — APPEALS AND PATIENT RIGHTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+APPEAL
+A formal request asking your insurer to reconsider a denial. You have the right to appeal any adverse decision. Two levels:
+1. Internal appeal — reviewed by the insurer, decision within 30 days (non-urgent) or 72 hours (urgent).
+2. External review — reviewed by an independent organization if internal appeal is denied.
+Note: Always appeal in writing. Keep copies of everything. Include supporting documentation from your doctor. Meet all deadlines (usually 180 days from denial).
+
+EXTERNAL REVIEW
+Independent review of your insurer's denial by an organization with no connection to your plan. If the reviewer decides in your favor, your insurer MUST cover the service. Protected by federal law for most plans.
+
+GRIEVANCE
+A formal complaint to your insurer about quality of care or customer service (not about a claim denial — that's an appeal). Your insurer must have a formal grievance process.
+
+NO SURPRISES ACT / SURPRISE BILLING PROTECTIONS
+Federal law effective January 1, 2022 protecting patients from unexpected bills from out-of-network providers in situations where they couldn't choose (emergencies, out-of-network providers at in-network facilities). Limits cost-sharing to in-network levels in these situations.
+
+MENTAL HEALTH PARITY
+Federal law (MHPAEA) requiring mental health and substance use disorder benefits to be no more restrictive than medical/surgical benefits. Applies to visit limits, dollar limits, prior auth requirements, and network adequacy.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION K — ADDITIONAL KEY TERMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ACTUARIAL VALUE (AV)
+The percentage of total average costs a plan pays for a standard population. Bronze=60%, Silver=70%, Gold=80%, Platinum=90%.
+
+BIRTHDAY RULE
+When a child is covered by both parents' plans, the parent whose birthday falls first in the calendar year has the primary plan.
+
+CONTINUATION COVERAGE
+The right to temporarily continue health insurance after losing eligibility. COBRA is the most common form for employer plans.
+
+CREDITABLE COVERAGE
+Prior health insurance that counts toward satisfying waiting periods. Relevant for Medicare Part D — prior creditable drug coverage avoids late enrollment penalties.
+
+DEPENDENT
+A person covered by your health plan other than the subscriber. Typically includes a spouse and children up to age 26 under the ACA, regardless of marital status or financial dependency.
+
+DME — DURABLE MEDICAL EQUIPMENT
+Medical equipment ordered by a doctor for home use — wheelchairs, walkers, hospital beds, oxygen equipment, CPAP machines, insulin pumps. Covered by most major plans with varying cost-sharing. Usually requires a prescription and sometimes prior authorization.
+
+EFFECTIVE DATE
+The date your health insurance coverage begins. Services BEFORE this date are not covered.
+
+EXCLUDED SERVICES
+Health care services your plan does NOT cover at all. Common exclusions: cosmetic procedures, weight loss programs, fertility treatments (varies), long-term care, hearing aids (varies), routine vision (varies). Always check your plan's exclusions list.
+
+GRACE PERIOD
+The time after your premium due date during which you can still pay and keep coverage. Employer plans: typically 30 days. ACA Marketplace plans with APTC: up to 90 days (claims may be held after day 30).
+
+GUARANTEED ISSUE
+A requirement that insurers sell and renew policies to any applicant regardless of health status. The ACA requires guaranteed issue for individual and small group markets.
+
+LIFETIME MAXIMUM
+The total amount an insurer will pay over your lifetime. The ACA prohibits lifetime dollar limits on essential health benefits.
+
+NPI — NATIONAL PROVIDER IDENTIFIER
+A unique 10-digit ID number for every health care provider in the US. Appears on claims, EOBs, and medical bills.
+
+PLAN YEAR
+A 12-month period of benefits coverage. Your deductible, OOP max, and other accumulators RESET at the start of each plan year — which may not be January 1.
+Note: Timing elective procedures relative to your plan year reset can save significant money.
+
+PRE-EXISTING CONDITION
+A health condition diagnosed or treated before starting a new insurance plan. The ACA prohibits most plans from denying coverage, charging higher premiums, or limiting benefits because of pre-existing conditions.
+
+PREVENTIVE CARE
+Routine health care aimed at preventing illness or early detection — annual physicals, vaccinations, cancer screenings, blood pressure/cholesterol checks. ACA-compliant plans must cover preventive services at NO COST, even before your deductible is met.
+
+RIDER
+An optional add-on to an insurance policy providing additional benefits (dental, vision, accident) for an additional premium.
+
+SBC — SUMMARY OF BENEFITS AND COVERAGE
+A standardized, plain-language summary (required by the ACA) describing what your plan covers and costs. Maximum 8 pages. Download yours from your insurer's website or ask HR. Use it to compare plans.
+
+URGENT CARE
+Care for conditions not life-threatening but needing attention within 24 hours — ear infections, minor cuts, sprains, UTIs, flu. Lower copays than the ER, shorter waits. Not appropriate for chest pain, stroke symptoms, or severe injuries.
+
+WAITING PERIOD
+Time an employee must wait before employer-sponsored coverage begins (typically 30-90 days after hire). ACA limits waiting periods to 90 days for employer plans.
+
+WORKERS COMPENSATION
+Separate from health insurance — a state-mandated program covering medical treatment and lost wages for work-related injuries. Your health insurance should NOT be billed for work-related injuries.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+UNITEDHEALTHCARE-SPECIFIC INFORMATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MYUHC.COM
+UnitedHealthcare's member portal at myuhc.com. Access your EOBs, ID cards, claims history, find in-network providers, view plan documents, manage prior authorizations, and download your Summary of Benefits and Coverage (SBC).
+
+UHC MEMBER ID CARD
+Your insurance card showing your member ID, group number, plan name, and member services phone number. The phone number on the back is your first call for any coverage or claims question. Always carry it or have it in the UHC mobile app.
+
+UHC PRIOR AUTHORIZATION
+UHC requires prior auth for many procedures, specialty drugs, certain imaging (MRI, CT), and out-of-network referrals. Your provider usually handles submission, but you are responsible for confirming it was obtained before the service. Check requirements at myuhc.com or call member services.
+
+UHC APPEALS PROCESS
+Step 1 — Internal Appeal: Submit within 180 days of denial. UHC must decide within 30 days (non-urgent), 72 hours (urgent/expedited), or 60 days (post-service).
+Step 2 — External Review: If UHC upholds the denial, request independent external review.
+Contact: Use the address and phone number on your denial letter. Document everything in writing.
+
+UHC TELEHEALTH / VIRTUAL VISITS
+UHC covers telehealth through UnitedHealth Group's virtual care platform and participating providers. Typically lower copay than in-person visits. Available for primary care, mental health, and some specialty care. Check your plan for telehealth-specific copay amounts.
+
+UHC TIERED NETWORK
+Many UHC plans organize in-network providers into tiers: Premium (Tier 1, lowest cost), Preferred (Tier 2), and Standard (Tier 3). Using Tier 1 (Premium) providers saves the most money. Always check the tier of a provider at myuhc.com before your appointment.
+
+UHC HEALTH PLAN TYPES OFFERED
+UHC offers HMO, PPO, EPO, HDHP, Medicare Advantage, Medicare Supplement, Medicaid managed care, and ACA Marketplace plans. Plan availability varies by state and employer.
+
+UHC PRIOR AUTH LOOKUP
+To check if a service requires prior authorization: log in to myuhc.com > My Plan > Prior Authorization, or call the member services number on your ID card, or have your provider check through UHC's provider portal (UnitedHealthCareOnline.com).
+
+================================================================================
+END OF GLOSSARY | 100+ Terms Defined
+Sources: healthcare.gov, CMS.gov, KFF.org, IRS.gov, HHS.gov, UHC public resources
+For general information only — not legal, medical, or financial advice.
+================================================================================

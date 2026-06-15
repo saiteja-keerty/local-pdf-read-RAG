@@ -1,0 +1,17 @@
+# Python dependencies only. GGUF model files and the Tesseract application
+# must be installed separately; see the repository README.
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+
+gradio>=4.40.0
+llama-cpp-python
+sentence-transformers
+faiss-cpu
+pypdf
+pymupdf
+pytesseract
+Pillow
+scikit-learn
+huggingface-hub
+requests
+transformers
+cryptography
