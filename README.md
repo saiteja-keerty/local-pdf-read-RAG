@@ -1,21 +1,5 @@
 ---
 title: InsureChat
-<<<<<<< HEAD
-emoji: 💬
-colorFrom: yellow
-colorTo: purple
-sdk: gradio
-sdk_version: 6.5.1
-app_file: app.py
-pinned: false
-hf_oauth: true
-hf_oauth_scopes:
-- inference-api
-short_description: 'A chatbot to ask anything or upload medical bills '
----
-
-An example chatbot using [Gradio](https://gradio.app), [`huggingface_hub`](https://huggingface.co/docs/huggingface_hub/v0.22.2/en/index), and the [Hugging Face Inference API](https://huggingface.co/docs/api-inference/index).
-=======
 emoji: "\U0001F6E1\uFE0F"
 colorFrom: blue
 colorTo: green
@@ -33,6 +17,10 @@ tags:
   - badge-open-source
   - badge-multilingual
   - badge-privacy-first
+short_description: 'A chatbot to ask anything or upload medical bills'
+hf_oauth: true
+hf_oauth_scopes:
+- inference-api
 ---
 
 # InsureChat
